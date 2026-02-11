@@ -231,11 +231,7 @@ const S = [
 ]],
 ["13-competitive","6. Competitive Feature Reference",0,[
 [0,"h","6. Competitive Positioning Matrix",0],
-[1,"p","Account Planning: SF=Add-on($$$), HubSpot=None, D365=Limited, Coryphaeus=Built-in with rollup.",0],
-[2,"p","AI Agents: SF=Einstein(3-4), HubSpot=2, D365=Copilot(generic), Coryphaeus=12 domain-specific+custom.",0],
-[3,"p","MCP Apps: SF=Raw CRUD, HubSpot=None, D365=None, Coryphaeus=Interactive dashboards.",0],
-[4,"p","AI Safety (PPAE): SF=None, HubSpot=None, D365=None, Coryphaeus=Full PPAE.",0],
-[5,"p","Token Pricing: SF/HubSpot/D365=Bundled/hidden, Coryphaeus=Real-time dashboard + BYOK.",0],
+[1,"t",[["Feature","Salesforce","HubSpot","D365","Coryphaeus"],["Account Planning","Add-on ($$$)","None","Limited","Built-in with rollup"],["AI Agents","Einstein (3-4)","2","Copilot (generic)","12 domain-specific + custom"],["MCP Apps","Raw CRUD","None","None","Interactive dashboards"],["AI Safety (PPAE)","None","None","None","Full PPAE"],["Token Pricing","Bundled / hidden","Bundled / hidden","Bundled / hidden","Real-time dashboard + BYOK"]],0],
 ]],
 ["14-account-planning","7. Account Planning & Strategy",8,[
 [0,"h","7. Account Planning & Strategy",0],
@@ -253,7 +249,7 @@ const S = [
 ]],
 ["15-pricing","8. Pricing Analysis",0,[
 [0,"h","8. Pricing Analysis (28 Vendors)",0],
-[1,"p","Starter: $12-25/user/month (Zoho $14, Pipedrive $15). Professional: $25-75 (HubSpot $45, SF $75). Enterprise: $75-300+ (SF $150+, D365 $95-150).",0],
+[1,"t",[["Tier","Price Range","Examples"],["Starter","$12–25 /user/mo","Zoho $14, Pipedrive $15"],["Professional","$25–75 /user/mo","HubSpot $45, SF $75"],["Enterprise","$75–300+ /user/mo","SF $150+, D365 $95–150"]],0],
 [2,"x","Coryphaeus Pricing: Phase 1 $10/user/month (add-on). Phase 2 $30/user/month + AI tokens. Enterprise ~50% of SF.",1],
 ]],
 ["16-roadmap","9. Product Vision & Roadmap",0,[
@@ -450,6 +446,32 @@ export default function App() {
           {isV31 && showChanges && <span className="badge-v31">NEW v3.1</span>}
         </div>
       );
+    } else if (type === 't') {
+      const rows = text;
+      const header = rows[0];
+      const body = rows.slice(1);
+      content = (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, lineHeight: 1.5 }}>
+            <thead>
+              <tr>
+                {header.map((cell, i) => (
+                  <th key={i} style={{ textAlign: 'left', padding: '8px 12px', background: '#f5f0e8', color: '#1a1a1a', fontWeight: 600, borderBottom: '2px solid #d4a85366', fontSize: 12, whiteSpace: 'nowrap' }}>{cell}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {body.map((row, ri) => (
+                <tr key={ri}>
+                  {row.map((cell, ci) => (
+                    <td key={ci} style={{ padding: '7px 12px', borderBottom: '1px solid #e8e8e8', color: ci === 0 ? '#1a1a1a' : ci === row.length - 1 ? '#8b6914' : '#555', fontWeight: ci === 0 ? 600 : 400, fontSize: 12.5 }}>{cell}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
     } else if (type === 'x') {
       const icon = isInnovation ? '⭐' : '⚡';
       const bg = isInnovation ? 'rgba(76,175,80,0.08)' : 'rgba(180,130,40,0.08)';
@@ -521,7 +543,7 @@ export default function App() {
         const key = commentKey(secIdx, itemIdx);
         const itemComments = comments[key] || [];
         itemComments.forEach(c => {
-          allComments.push({ ...c, secIdx, itemIdx, sectionName: sec[1], itemText: text });
+          allComments.push({ ...c, secIdx, itemIdx, sectionName: sec[1], itemText: typeof text === 'string' ? text : '(table)' });
         });
       });
     });

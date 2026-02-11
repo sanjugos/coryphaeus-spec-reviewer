@@ -320,19 +320,23 @@ async function compApiGet() {
   try {
     const r = await fetch(COMP_API);
     if (!r.ok) throw new Error(r.statusText);
-    return await r.json();
+    const data = await r.json();
+    if (Array.isArray(data) && data.length > 0) return data;
+    // API returned empty — check localStorage for data saved locally
+    try { const local = JSON.parse(localStorage.getItem("coryphaeus-competitors") || "[]"); if (local.length > 0) return local; } catch {}
+    return data;
   } catch {
     try { return JSON.parse(localStorage.getItem("coryphaeus-competitors") || "[]"); } catch { return []; }
   }
 }
 
 async function compApiSave(data) {
+  // Always save to localStorage as belt-and-suspenders
+  try { localStorage.setItem("coryphaeus-competitors", JSON.stringify(data)); } catch {}
   try {
     const r = await fetch(COMP_API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
     if (!r.ok) throw new Error(r.statusText);
-  } catch {
-    try { localStorage.setItem("coryphaeus-competitors", JSON.stringify(data)); } catch {}
-  }
+  } catch {}
 }
 
 // ── Main App ──
@@ -642,7 +646,7 @@ export default function App() {
   const addIntel = useCallback(async () => {
     const html = compEditorRef.current ? compEditorRef.current.innerHTML : '';
     const hasText = html.replace(/<[^>]*>/g, '').trim().length > 0;
-    if (!intelForm.competitor && !intelForm.title && !hasText && !audioData && attachments.length === 0) return;
+    if (!intelForm.competitor && !intelForm.title && !hasText && !audioData && !compVideo && attachments.length === 0) return;
     const entry = {
       id: Date.now(), num: nextIntelNum(),
       competitor: intelForm.competitor || 'Other',

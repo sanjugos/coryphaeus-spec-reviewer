@@ -377,12 +377,13 @@ export default function App() {
   }, [comments]);
 
   useEffect(() => {
-    apiGet().then(c => {
+    apiGet().then(raw => {
+      // Deep clone so React sees a new object
+      const c = JSON.parse(JSON.stringify(raw));
       // Backfill: assign stable numbers to old comments that lack them
       let max = 0;
       Object.values(c).forEach(arr => arr.forEach(cm => { if (cm.num > max) max = cm.num; }));
       let needsSave = false;
-      // Sort all comments chronologically to assign numbers in order
       const all = [];
       Object.entries(c).forEach(([key, arr]) => arr.forEach((cm, i) => { if (!cm.num) all.push({ key, i, time: cm.time || '' }); }));
       all.sort((a, b) => a.time.localeCompare(b.time));
@@ -701,7 +702,7 @@ export default function App() {
             {itemComments.map(c => (
               <div key={c.id} style={{ fontSize: 12, marginBottom: 4 }}>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                  {c.num && <span style={{ fontSize: 9, fontFamily: "'JetBrains Mono', monospace", color: '#8b6914', background: '#f5f0e8', padding: '1px 5px', borderRadius: 3, whiteSpace: 'nowrap', lineHeight: '18px' }}>C-{String(c.num).padStart(3,'0')}</span>}
+                  <span style={{ fontSize: 9, fontFamily: "'JetBrains Mono', monospace", color: '#8b6914', background: '#f5f0e8', padding: '1px 5px', borderRadius: 3, whiteSpace: 'nowrap', lineHeight: '18px', flexShrink: 0 }}>C-{String(c.num || 0).padStart(3,'0')}</span>
                   <span style={{ fontWeight: 600, color: '#4a7cc9', whiteSpace: 'nowrap' }}>{c.author}</span>
                   <span className="comment-html" style={{ flex: 1, color: '#555' }} dangerouslySetInnerHTML={{ __html: c.text }} />
                   <span style={{ fontSize: 10, color: '#999', whiteSpace: 'nowrap' }}>{new Date(c.time).toLocaleDateString()}</span>
@@ -765,7 +766,7 @@ export default function App() {
                 {itemComments.map(c => (
                   <div key={c.id} style={{ fontSize: 12, marginBottom: 3 }}>
                     <div style={{ display: 'flex', gap: 8 }}>
-                      {c.num && <span style={{ fontSize: 9, fontFamily: "'JetBrains Mono', monospace", color: '#8b6914', background: '#f5f0e8', padding: '1px 5px', borderRadius: 3, whiteSpace: 'nowrap', lineHeight: '18px' }}>C-{String(c.num).padStart(3,'0')}</span>}
+                      <span style={{ fontSize: 9, fontFamily: "'JetBrains Mono', monospace", color: '#8b6914', background: '#f5f0e8', padding: '1px 5px', borderRadius: 3, whiteSpace: 'nowrap', lineHeight: '18px', flexShrink: 0 }}>C-{String(c.num || 0).padStart(3,'0')}</span>
                       <span style={{ fontWeight: 600, color: '#4a7cc9' }}>{c.author}</span>
                       <span className="comment-html" style={{ flex: 1, color: '#555' }} dangerouslySetInnerHTML={{ __html: c.text }} />
                       <button onClick={() => deleteComment(activeSection, itemIdx, c.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#999', fontSize: 10 }}>✕</button>
@@ -829,7 +830,7 @@ export default function App() {
                   {c.itemText.length > 150 ? c.itemText.slice(0, 150) + '…' : c.itemText}
                 </div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                  {c.num && <span style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", color: '#8b6914', background: '#f5f0e8', padding: '2px 6px', borderRadius: 3, whiteSpace: 'nowrap', lineHeight: '18px' }}>C-{String(c.num).padStart(3,'0')}</span>}
+                  <span style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", color: '#8b6914', background: '#f5f0e8', padding: '2px 6px', borderRadius: 3, whiteSpace: 'nowrap', lineHeight: '18px', flexShrink: 0 }}>C-{String(c.num || 0).padStart(3,'0')}</span>
                   <span style={{ fontWeight: 600, color: '#4a7cc9', fontSize: 13, whiteSpace: 'nowrap' }}>{c.author}</span>
                   <span className="comment-html" style={{ flex: 1, color: '#333', fontSize: 13 }} dangerouslySetInnerHTML={{ __html: c.text }} />
                   <span style={{ fontSize: 10, color: '#999', whiteSpace: 'nowrap' }}>{new Date(c.time).toLocaleDateString()}</span>

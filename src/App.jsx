@@ -47,33 +47,24 @@ const S = [
 ["02-technical-architecture","2. Technical Architecture (2.1-2.3)",0,[
 [0,"h","2.1 Architecture Overview",0],
 [1,"p","Cloud-native 5-layer microservices: Presentation → API Gateway → Application (AKS) → Data → Integration.",0],
-[2,"h","Layer 1: Presentation",0],
-[3,"p","React SPA (TypeScript/Redux), React Native mobile (offline-first), Next.js admin portal, WebSocket real-time.",0],
-[4,"h","Layer 2: API Gateway",0],
-[5,"p","Azure APIM, OAuth 2.0 + OIDC via Entra ID, tier-based rate limiting (100/1K/10K per min), API versioning v1/v2/v3.",0],
-[6,"h","Layer 3: Application (11 Microservices on AKS)",0],
-[7,"p","Account, Sales, Marketing, Service, Contact Center, AI, Workflow (Zeebe + ADR-007), Integration, Analytics, User, Billing services.",0],
-[8,"h","Layer 4: Data",0],
-[9,"p","PostgreSQL 15+ (Flexible Server), pgvector embeddings, Redis cache, Blob Storage, Azure AI Search, Synapse Analytics.",0],
-[10,"h","Layer 5: Integration",0],
-[11,"p","Azure Service Bus (Topics+Subscriptions), Azure Functions, webhook engine with retry, polling scheduler.",0],
-[12,"h","2.2 Multi-Tenancy (RLS)",0],
-[13,"p","Shared Database, Shared Schema, Tenant Column + RLS. Simpler migrations, efficient resources, transparent isolation.",0],
-[14,"h","2.3 Database Architecture",0],
-[15,"p","Multi-AZ, 35-day PITR, PgBouncer pooling. Partitioning by tenant_id+time. B-tree, GIN, partial, FTS, BRIN indexes.",0],
-[16,"x","EAV Pattern for Custom Fields — users click '+' on any screen to add fields. ~20 custom fields per entity per tenant.",1],
-[17,"x","Centralized Code Tables — all picklists managed through code table system. Tenant-configurable with system defaults.",1],
-[18,"h","2.3.6 Multi-Currency",0],
-[19,"p","System default per tenant, per-record override (ISO 4217), ISO currency symbol display, exchange rate table.",0],
-[20,"h","2.3.8 Soft Delete",0],
-[21,"x","Soft Delete with deleted_at TIMESTAMP — NULL = active, non-NULL = deleted. Hard delete only via admin action.",1],
+[2,"t",[["Layer","Technology Stack"],["1. Presentation","React SPA (TypeScript/Redux), React Native mobile (offline-first), Next.js admin portal, WebSocket real-time"],["2. API Gateway","Azure APIM, OAuth 2.0 + OIDC via Entra ID, tier-based rate limiting (100/1K/10K per min), API versioning v1/v2/v3"],["3. Application","11 Microservices on AKS: Account, Sales, Marketing, Service, Contact Center, AI, Workflow (Zeebe), Integration, Analytics, User, Billing"],["4. Data","PostgreSQL 15+ (Flexible Server), pgvector embeddings, Redis cache, Blob Storage, Azure AI Search, Synapse Analytics"],["5. Integration","Azure Service Bus (Topics+Subscriptions), Azure Functions, webhook engine with retry, polling scheduler"]],0],
+[3,"h","2.2 Multi-Tenancy (RLS)",0],
+[4,"p","Shared Database, Shared Schema, Tenant Column + RLS. Simpler migrations, efficient resources, transparent isolation.",0],
+[5,"h","2.3 Database Architecture",0],
+[6,"p","Multi-AZ, 35-day PITR, PgBouncer pooling. Partitioning by tenant_id+time. B-tree, GIN, partial, FTS, BRIN indexes.",0],
+[7,"x","EAV Pattern for Custom Fields — users click '+' on any screen to add fields. ~20 custom fields per entity per tenant.",1],
+[8,"x","Centralized Code Tables — all picklists managed through code table system. Tenant-configurable with system defaults.",1],
+[9,"h","2.3.6 Multi-Currency",0],
+[10,"p","System default per tenant, per-record override (ISO 4217), ISO currency symbol display, exchange rate table.",0],
+[11,"h","2.3.8 Soft Delete",0],
+[12,"x","Soft Delete with deleted_at TIMESTAMP — NULL = active, non-NULL = deleted. Hard delete only via admin action.",1],
 ]],
 ["03-security-encryption","2. Security & Encryption (2.4-2.5)",0,[
 [0,"h","2.4 Field-Level Encryption & Tokenization",0],
 [1,"p","Envelope encryption (DEK+KEK via Azure Key Vault) with AES-256-GCM. Tokenization for PII. Blind indexes for search.",0],
 [2,"x","Three-Tier PII Classification: Safe (company name), Sensitive (email—click-to-reveal), Restricted (SSN—never leaves web UI).",2],
 [3,"h","2.4.2 Encryptable Fields",0],
-[4,"p","Contact: email, phone, DOB, national_id. Account: phone, annual_revenue. Lead: email/phone. Employee: national_id. Payment: card/cvv.",0],
+[4,"t",[["Entity","Encrypted Fields"],["Contact","email, phone, DOB, national_id"],["Account","phone, annual_revenue"],["Lead","email, phone"],["Employee","national_id"],["Payment","card, cvv"]],0],
 [5,"h","2.5 Azure Cloud Services",0],
 [6,"p","AKS, PostgreSQL Flexible, Redis, OpenAI, AI Search, Blob Storage, Service Bus, Key Vault, Entra ID, Monitor, Document Intelligence.",0],
 ]],
@@ -257,11 +248,8 @@ const S = [
 [1,"h","9.1 Technical Differentiation",0],
 [2,"p","10 innovations: Native Account Planning, PPAE, PII Classes, MCP Apps, LazyGraphRAG, Two-Loop Orchestration, Single Retrieval API, Token Pricing, MCP Security, SimpleMem Memory.",0],
 [3,"h","9.2 Implementation Roadmap",0],
-[4,"p","Phase 1 (M1-6): Accounts, Contacts, Opportunities, Cases, basic Account Plans.",0],
-[5,"p","Phase 2 (M7-12): Full Account Planning, 12 AI agents, BPMN, Contact Center.",0],
-[6,"p","Phase 3 (M13-18): Marketing, MCP Apps, Integration marketplace.",0],
-[7,"p","Phase 4 (M19-24): Advanced analytics, LazyGraphRAG, compliance certs.",0],
-[8,"x","Priority Rollout: (1) Accounts+Contacts, (2) Opportunities+Account Plans, (3) Cases+Contact Center.",1],
+[4,"t",[["Phase","Timeline","Scope"],["Phase 1","M1–6","Accounts, Contacts, Opportunities, Cases, basic Account Plans"],["Phase 2","M7–12","Full Account Planning, 12 AI agents, BPMN, Contact Center"],["Phase 3","M13–18","Marketing, MCP Apps, Integration marketplace"],["Phase 4","M19–24","Advanced analytics, LazyGraphRAG, compliance certs"]],0],
+[5,"x","Priority Rollout: (1) Accounts+Contacts, (2) Opportunities+Account Plans, (3) Cases+Contact Center.",1],
 ]],
 ["17-innovations","10. Innovation Roadmap (Rounds 1-7)",8,[
 [0,"h","10. Innovation Roadmap — Critical Analysis Rounds 1-7",0],
@@ -269,31 +257,28 @@ const S = [
 [2,"h","10.1 Convergence Scorecard",0],
 [3,"p","15 decisions tracked across 7 rounds. Key: RAG(Rd1), PPAE(Rd1), MCP Apps(Rd3), LazyGraphRAG(Rd4), Memory Provider(Rd4), Three-Layer(Rd6), Embedding/Chunking/PDP-PEP/OTel(Rd7).",0],
 [4,"h","10.2 Priority Matrix (v3.1)",1],
-[5,"p","P0: ADR-001 Retrieval, ADR-002 Orchestration, ADR-003 MCP Security, ADR-007 Workflow DSL (CLOSED), AI Eval, PPAE. Embedding+Chunking+PDP/PEP APPLIED v3.1.",1],
-[6,"p","P1: ADR-004 Memory, ADR-005 Agent Portfolio, ADR-006 LazyGraphRAG, OTel+Governance APPLIED v3.1.",1],
-[7,"p","P2: Stage Transition Simulation, MCP Apps build. P3: A2UI mobile pilot (deferred Q4 2026).",0],
-[8,"h","10.3 Salesforce MCP Gap Analysis",0],
-[9,"x","SF MCP (GA Feb 2026): Raw CRUD only. No deal reasoning, no MCP Apps, no PPAE, no AI Trust Center.",2],
-[10,"h","10.4 MCP Tool Poisoning",0],
-[11,"x","MCPTox Benchmark: 72.8% attack success. CVEs documented. 43% public MCP servers have command injection.",2],
-[12,"h","10.5 Memory Architecture",0],
-[13,"x","SimpleMem: 43.24% F1, 26.4% improvement over Mem0. MIT licensed. Memory Provider Interface ensures pluggability.",2],
-[14,"h","10.6 ADR Readiness",1],
-[15,"p","ADR-001: Retrieval (this week). ADR-002: Orchestration (90 days). ADR-003: MCP Security (this week). ADR-004-006: Phase 1. ADR-007: CLOSED.",0],
+[5,"t",[["Priority","Items","Status"],["P0","ADR-001 Retrieval, ADR-002 Orchestration, ADR-003 MCP Security, ADR-007 Workflow DSL (CLOSED), AI Eval, PPAE, Embedding+Chunking+PDP/PEP","APPLIED v3.1"],["P1","ADR-004 Memory, ADR-005 Agent Portfolio, ADR-006 LazyGraphRAG, OTel+Governance","APPLIED v3.1"],["P2","Stage Transition Simulation, MCP Apps build","Planned"],["P3","A2UI mobile pilot","Deferred Q4 2026"]],1],
+[6,"h","10.3 Salesforce MCP Gap Analysis",0],
+[7,"x","SF MCP (GA Feb 2026): Raw CRUD only. No deal reasoning, no MCP Apps, no PPAE, no AI Trust Center.",2],
+[8,"h","10.4 MCP Tool Poisoning",0],
+[9,"x","MCPTox Benchmark: 72.8% attack success. CVEs documented. 43% public MCP servers have command injection.",2],
+[10,"h","10.5 Memory Architecture",0],
+[11,"x","SimpleMem: 43.24% F1, 26.4% improvement over Mem0. MIT licensed. Memory Provider Interface ensures pluggability.",2],
+[12,"h","10.6 ADR Readiness",1],
+[13,"p","ADR-001: Retrieval (this week). ADR-002: Orchestration (90 days). ADR-003: MCP Security (this week). ADR-004-006: Phase 1. ADR-007: CLOSED.",0],
 ]],
 ["18-appendix","11. Appendix",4,[
 [0,"h","11. Appendix",0],
 [1,"h","11.1 Change Log",0],
-[2,"p","v2.0: Original 27 entities, 6 differentiators. v3.0: Review 3 (88 items), 43 entities, 8 differentiators, Rounds 1-5.",0],
-[3,"p","v3.1: Stephen Review 1 (39 changes, 8 comments), Rounds 6-7, 48 entities, Complaint merged, 6 new entities, P0 fixes.",1],
-[4,"h","11.3 Naming Changes",0],
-[5,"p","zip→postal_code, ssn→national_id, title→designation, added building_number/unit_number/currency_code/deleted_at, gross_amount→sales_tcv_amount(v3.1).",0],
-[6,"h","11.4 Decision Register (D1-D16)",0],
-[7,"p","16 closed decisions spanning 7 rounds. D1:RAG, D2:BPMN+LangGraph, D3:MCP Apps, D4:PPAE, D5:Web canonical, D6:Memory, D7:LazyGraphRAG, D8-D16:Rounds 6-7.",0],
-[8,"h","11.5 Open Questions (OQ1-OQ8)",0],
-[9,"p","OQ1:Agent nesting, OQ2:Employee entity, OQ3:Search vs pgvector, OQ4:Loyalty reqs, OQ5:DSL compiler, OQ6:Redaction scope, OQ7:SF MCP, OQ8:Cold-start cost.",0],
-[10,"h","11.6 Glossary",0],
-[11,"p","PPAE, MCP, BPMN, DMN, RLS, EAV, RAG, LazyGraphRAG, LangGraph, ADR, TCV, ICP, PII, PDP/PEP, OTel, OKR, SPIN, BYOK, NL, WFM, NIST AI RMF, ISO 42001.",0],
+[2,"t",[["Version","Changes"],["v2.0","Original 27 entities, 6 differentiators"],["v3.0","Review 3 (88 items), 43 entities, 8 differentiators, Rounds 1-5"],["v3.1","Stephen Review 1 (39 changes, 8 comments), Rounds 6-7, 48 entities, Complaint merged, 6 new entities, P0 fixes"]],0],
+[3,"h","11.3 Naming Changes",0],
+[4,"t",[["Old","New"],["zip","postal_code"],["ssn","national_id"],["title","designation"],["gross_amount","sales_tcv_amount (v3.1)"],["—","building_number (added)"],["—","unit_number (added)"],["—","currency_code (added)"],["—","deleted_at (added)"]],0],
+[5,"h","11.4 Decision Register (D1-D16)",0],
+[6,"t",[["Decision","Topic"],["D1","RAG"],["D2","BPMN + LangGraph"],["D3","MCP Apps"],["D4","PPAE"],["D5","Web canonical"],["D6","Memory"],["D7","LazyGraphRAG"],["D8–D16","Rounds 6-7"]],0],
+[7,"h","11.5 Open Questions (OQ1-OQ8)",0],
+[8,"t",[["ID","Question"],["OQ1","Agent nesting"],["OQ2","Employee entity"],["OQ3","Search vs pgvector"],["OQ4","Loyalty reqs"],["OQ5","DSL compiler"],["OQ6","Redaction scope"],["OQ7","SF MCP"],["OQ8","Cold-start cost"]],0],
+[9,"h","11.6 Glossary",0],
+[10,"p","PPAE, MCP, BPMN, DMN, RLS, EAV, RAG, LazyGraphRAG, LangGraph, ADR, TCV, ICP, PII, PDP/PEP, OTel, OKR, SPIN, BYOK, NL, WFM, NIST AI RMF, ISO 42001.",0],
 ]],
 ];
 
@@ -328,7 +313,11 @@ async function apiSave(data) {
 
 // ── Main App ──
 export default function App() {
-  const [activeSection, setActiveSection] = useState(0);
+  const [activeSection, setActiveSection] = useState(() => {
+    const hash = window.location.hash.slice(1);
+    const idx = S.findIndex(s => s[0] === hash);
+    return idx >= 0 ? idx : 0;
+  });
   const [comments, setComments] = useState({});
   const [commentingOn, setCommentingOn] = useState(null);
   const [commentText, setCommentText] = useState("");
@@ -368,7 +357,7 @@ export default function App() {
     apiGet().then(c => { setComments(c); setLoaded(true); });
   }, []);
 
-  useEffect(() => { contentRef.current?.scrollTo(0, 0); }, [activeSection]);
+  useEffect(() => { contentRef.current?.scrollTo(0, 0); window.location.hash = S[activeSection][0]; }, [activeSection]);
 
   const commentKey = (secIdx, itemIdx) => `${S[secIdx][0]}-${itemIdx}`;
   const getComments = (secIdx, itemIdx) => comments[commentKey(secIdx, itemIdx)] || [];
@@ -637,7 +626,7 @@ export default function App() {
             <label style={{ fontSize: 11, color: !showChanges ? '#8b6914' : '#888', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 2 }}>
               <input type="radio" name="showChanges" checked={!showChanges} onChange={() => setShowChanges(false)} style={{ margin: 0, accentColor: '#8b6914' }} /> No
             </label>
-            <button onClick={() => setShowSummary(!showSummary)} style={{ marginLeft: 'auto', padding: '4px 8px', fontSize: 11, background: showSummary ? '#e8f0fc' : 'transparent', color: showSummary ? '#4a7cc9' : '#888', border: `1px solid ${showSummary ? '#4a7cc944' : '#d0d0d0'}`, borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit' }}>
+            <button onClick={() => setShowSummary(!showSummary)} style={{ padding: '4px 8px', fontSize: 11, background: showSummary ? '#e8f0fc' : 'transparent', color: showSummary ? '#4a7cc9' : '#888', border: `1px solid ${showSummary ? '#4a7cc944' : '#d0d0d0'}`, borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit' }}>
               💬 Summary
             </button>
           </div>

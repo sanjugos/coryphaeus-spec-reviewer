@@ -393,6 +393,8 @@ export default function App() {
   const [intelForm, setIntelForm] = useState({ competitor: '', features: [], title: '', links: [] });
   const [newLink, setNewLink] = useState('');
   const [compVideo, setCompVideo] = useState(null);
+  const [editingIntelId, setEditingIntelId] = useState(null);
+  const [mediaModal, setMediaModal] = useState(null); // { items: [{type,src,name}], index: 0 }
   const contentRef = useRef(null);
   const inputRef = useRef(null);
   const editorRef = useRef(null);
@@ -685,6 +687,59 @@ export default function App() {
     setSaving(false);
   }, [competitorData]);
 
+  const startEditIntel = useCallback((entry) => {
+    setEditingIntelId(entry.id);
+    setAddingIntel(true);
+    setIntelForm({
+      competitor: entry.competitor || '',
+      features: entry.features || (entry.feature ? [entry.feature] : []),
+      title: entry.title || '',
+      links: entry.links || []
+    });
+    setNewLink('');
+    setAudioData(entry.audio || null);
+    setCompVideo(entry.video || null);
+    setAttachments([
+      ...(entry.images || []).map((d, i) => ({ id: Date.now() + i, data: d, name: `image-${i + 1}`, isImage: true })),
+      ...(entry.files || []).map((f, i) => ({ id: Date.now() + 1000 + i, data: f.data, name: f.name, fileType: f.type, isImage: false }))
+    ]);
+    setTranscript('');
+    setTimeout(() => { if (compEditorRef.current) compEditorRef.current.innerHTML = entry.text || ''; }, 50);
+  }, []);
+
+  const saveEditIntel = useCallback(async () => {
+    const html = compEditorRef.current ? compEditorRef.current.innerHTML : '';
+    const hasText = html.replace(/<[^>]*>/g, '').trim().length > 0;
+    const newData = competitorData.map(e => {
+      if (e.id !== editingIntelId) return e;
+      return {
+        ...e,
+        competitor: intelForm.competitor || e.competitor || 'Other',
+        features: intelForm.features.length > 0 ? intelForm.features : e.features || ['General'],
+        title: intelForm.title,
+        text: hasText ? html : '',
+        links: intelForm.links.filter(l => l.trim()),
+        images: attachments.filter(a => a.isImage).map(a => a.data),
+        files: attachments.filter(a => !a.isImage).map(a => ({ data: a.data, name: a.name, type: a.fileType })),
+        audio: audioData || null,
+        video: compVideo || null,
+      };
+    });
+    setCompetitorData(newData);
+    setEditingIntelId(null);
+    setAddingIntel(false);
+    setIntelForm({ competitor: '', features: [], title: '', links: [] });
+    setNewLink('');
+    if (compEditorRef.current) compEditorRef.current.innerHTML = '';
+    setAudioData(null);
+    setAttachments([]);
+    setCompVideo(null);
+    setTranscript('');
+    setSaving(true);
+    await compApiSave(newData);
+    setSaving(false);
+  }, [editingIntelId, intelForm, competitorData, attachments, audioData, compVideo]);
+
   useEffect(() => {
     if (commentingOn && inputRef.current) inputRef.current.focus();
   }, [commentingOn]);
@@ -976,7 +1031,7 @@ export default function App() {
     return (
       <div style={{ maxWidth: 900, margin: '0 auto' }}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
-          <button onClick={() => { setAddingIntel(true); setAudioData(null); setAttachments([]); setTranscript(''); setCompVideo(null); setIntelForm({ competitor: '', features: [], title: '', links: [] }); setNewLink(''); }}
+          <button onClick={() => { setEditingIntelId(null); setAddingIntel(true); setAudioData(null); setAttachments([]); setTranscript(''); setCompVideo(null); setIntelForm({ competitor: '', features: [], title: '', links: [] }); setNewLink(''); }}
             style={{ padding: '7px 14px', background: '#8b6914', color: '#fff', border: 'none', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>+ Add Intel</button>
           <select value={compFilter} onChange={e => setCompFilter(e.target.value)}
             style={{ padding: '6px 8px', fontSize: 12, background: '#fff', color: '#1a1a1a', border: '1px solid #d0d0d0', borderRadius: 4, fontFamily: 'inherit' }}>
@@ -1092,8 +1147,8 @@ export default function App() {
               </div>
             )}
             <div style={{ display: 'flex', gap: 6 }}>
-              <button onClick={addIntel} style={{ padding: '6px 14px', background: '#8b6914', color: '#fff', border: 'none', borderRadius: 4, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Add Intel</button>
-              <button onClick={() => { setAddingIntel(false); setAudioData(null); setAttachments([]); setCompVideo(null); setTranscript(''); setDragOver(false); if (isRecording) stopRecording(); }}
+              <button onClick={editingIntelId ? saveEditIntel : addIntel} style={{ padding: '6px 14px', background: '#8b6914', color: '#fff', border: 'none', borderRadius: 4, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>{editingIntelId ? 'Save Changes' : 'Add Intel'}</button>
+              <button onClick={() => { setAddingIntel(false); setEditingIntelId(null); setAudioData(null); setAttachments([]); setCompVideo(null); setTranscript(''); setDragOver(false); if (isRecording) stopRecording(); }}
                 style={{ padding: '6px 10px', background: 'none', color: '#888', border: '1px solid #d0d0d0', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>Cancel</button>
             </div>
           </div>
@@ -1122,7 +1177,8 @@ export default function App() {
                   <span style={{ flex: 1 }} />
                   <span style={{ fontSize: 11, fontWeight: 600, color: '#4a7cc9' }}>{e.author}</span>
                   <span style={{ fontSize: 10, color: '#999' }}>{new Date(e.time).toLocaleDateString()}</span>
-                  <button onClick={() => deleteIntel(e.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#999', fontSize: 10, padding: '0 2px' }}>✕</button>
+                  <button onClick={() => startEditIntel(e)} title="Edit" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#999', fontSize: 11, padding: '0 2px' }}>✎</button>
+                  <button onClick={() => deleteIntel(e.id)} title="Delete" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#999', fontSize: 10, padding: '0 2px' }}>✕</button>
                 </div>
                 {e.title && <div style={{ fontWeight: 600, fontSize: 13, color: '#1a1a1a', marginBottom: 4 }}>{e.title}</div>}
                 {e.text && <div className="comment-html" style={{ fontSize: 13, color: '#444', marginBottom: 6 }} dangerouslySetInnerHTML={{ __html: e.text }} />}
@@ -1141,18 +1197,29 @@ export default function App() {
                     })}
                   </div>
                 )}
-                {e.images?.length > 0 && (
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
-                    {e.images.map((src, i) => <img key={i} src={src} alt="screenshot" onClick={() => setModalImage(src)} style={{ maxWidth: 300, maxHeight: 180, borderRadius: 4, border: '1px solid #e0e0e0', cursor: 'pointer' }} />)}
-                  </div>
-                )}
-                {e.audio && <audio controls src={e.audio} style={{ height: 28, marginBottom: 6, maxWidth: '100%', display: 'block' }} />}
-                {e.video && <video controls src={e.video} style={{ maxWidth: 400, maxHeight: 225, borderRadius: 4, marginBottom: 6, display: 'block' }} />}
-                {e.files?.length > 0 && (
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    {e.files.map((d, i) => <a key={i} href={d.data} download={d.name} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', background: '#f5f0e8', borderRadius: 4, fontSize: 11, color: '#8b6914', textDecoration: 'none', border: '1px solid #e0d8c8' }}>📄 {d.name}</a>)}
-                  </div>
-                )}
+                {(() => {
+                  const allMedia = [
+                    ...(e.images || []).map((src, i) => ({ type: 'image', src, name: `Image ${i + 1}` })),
+                    ...(e.files || []).map(d => ({ type: 'file', src: d.data, name: d.name, fileType: d.type })),
+                    ...(e.video ? [{ type: 'video', src: e.video, name: 'Video' }] : []),
+                  ];
+                  const openMedia = (idx) => setMediaModal({ items: allMedia, index: idx });
+                  let imgCount = 0;
+                  return <>
+                    {e.images?.length > 0 && (
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
+                        {e.images.map((src, i) => { const idx = i; imgCount++; return <img key={i} src={src} alt="screenshot" onClick={() => openMedia(idx)} style={{ maxWidth: 300, maxHeight: 180, borderRadius: 4, border: '1px solid #e0e0e0', cursor: 'pointer' }} />; })}
+                      </div>
+                    )}
+                    {e.audio && <audio controls src={e.audio} style={{ height: 28, marginBottom: 6, maxWidth: '100%', display: 'block' }} />}
+                    {e.video && <video controls src={e.video} onClick={() => openMedia(allMedia.findIndex(m => m.type === 'video'))} style={{ maxWidth: 400, maxHeight: 225, borderRadius: 4, marginBottom: 6, display: 'block', cursor: 'pointer' }} />}
+                    {e.files?.length > 0 && (
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        {e.files.map((d, i) => { const idx = (e.images?.length || 0) + i; return <button key={i} onClick={() => openMedia(idx)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', background: '#f5f0e8', borderRadius: 4, fontSize: 11, color: '#8b6914', border: '1px solid #e0d8c8', cursor: 'pointer', fontFamily: 'inherit' }}>📄 {d.name}</button>; })}
+                      </div>
+                    )}
+                  </>;
+                })()}
               </div>
             ))}
           </div>
@@ -1299,6 +1366,50 @@ export default function App() {
           <button onClick={() => setModalImage(null)} style={{ position: 'absolute', top: 20, right: 20, background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', fontSize: 24, width: 40, height: 40, borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
         </div>
       )}
+
+      {mediaModal && (() => {
+        const { items, index } = mediaModal;
+        const item = items[index];
+        const hasPrev = index > 0;
+        const hasNext = index < items.length - 1;
+        const navBtn = (dir, onClick, disabled) => (
+          <button onClick={e => { e.stopPropagation(); onClick(); }} disabled={disabled}
+            style={{ position: 'absolute', top: '50%', [dir === 'prev' ? 'left' : 'right']: 16, transform: 'translateY(-50%)', background: disabled ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.15)', border: 'none', color: disabled ? '#555' : '#fff', fontSize: 28, width: 48, height: 48, borderRadius: '50%', cursor: disabled ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.15s' }}>
+            {dir === 'prev' ? '‹' : '›'}
+          </button>
+        );
+        return (
+          <div onClick={() => setMediaModal(null)} onKeyDown={e => {
+            if (e.key === 'ArrowLeft' && hasPrev) setMediaModal(m => ({ ...m, index: m.index - 1 }));
+            if (e.key === 'ArrowRight' && hasNext) setMediaModal(m => ({ ...m, index: m.index + 1 }));
+            if (e.key === 'Escape') setMediaModal(null);
+          }} tabIndex={0} ref={el => el?.focus()}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 1001, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', outline: 'none' }}>
+            <div style={{ position: 'absolute', top: 20, left: 0, right: 0, display: 'flex', justifyContent: 'center', gap: 8, alignItems: 'center' }}>
+              <span style={{ color: '#fff', fontSize: 13, background: 'rgba(0,0,0,0.5)', padding: '4px 12px', borderRadius: 12 }}>{item.name}</span>
+              <span style={{ color: '#aaa', fontSize: 12 }}>{index + 1} / {items.length}</span>
+            </div>
+            <div onClick={e => e.stopPropagation()} style={{ maxWidth: '85vw', maxHeight: '80vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {item.type === 'image' && <img src={item.src} alt={item.name} style={{ maxWidth: '85vw', maxHeight: '80vh', borderRadius: 8, boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }} />}
+              {item.type === 'video' && <video controls autoPlay src={item.src} style={{ maxWidth: '85vw', maxHeight: '80vh', borderRadius: 8 }} />}
+              {item.type === 'file' && (
+                <div style={{ background: '#fff', borderRadius: 12, padding: '40px 60px', textAlign: 'center', maxWidth: 500 }}>
+                  <div style={{ fontSize: 48, marginBottom: 16 }}>📄</div>
+                  <div style={{ fontSize: 16, fontWeight: 600, color: '#1a1a1a', marginBottom: 8 }}>{item.name}</div>
+                  {item.src && item.src.startsWith('data:application/pdf') ? (
+                    <iframe src={item.src} style={{ width: '70vw', height: '70vh', border: '1px solid #e0e0e0', borderRadius: 8, marginTop: 12 }} />
+                  ) : (
+                    <a href={item.src} download={item.name} style={{ display: 'inline-block', marginTop: 12, padding: '10px 24px', background: '#8b6914', color: '#fff', borderRadius: 6, fontSize: 13, fontWeight: 600, textDecoration: 'none' }}>Download File</a>
+                  )}
+                </div>
+              )}
+            </div>
+            {navBtn('prev', () => setMediaModal(m => ({ ...m, index: m.index - 1 })), !hasPrev)}
+            {navBtn('next', () => setMediaModal(m => ({ ...m, index: m.index + 1 })), !hasNext)}
+            <button onClick={() => setMediaModal(null)} style={{ position: 'absolute', top: 20, right: 20, background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', fontSize: 24, width: 40, height: 40, borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+          </div>
+        );
+      })()}
     </div>
   );
 }

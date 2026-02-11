@@ -356,6 +356,7 @@ export default function App() {
   const [recordingTime, setRecordingTime] = useState(0);
   const [modalImage, setModalImage] = useState(null);
   const [transcript, setTranscript] = useState('');
+  const [dragOver, setDragOver] = useState(false);
   const contentRef = useRef(null);
   const inputRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -389,7 +390,15 @@ export default function App() {
     try { localStorage.setItem("spec-author", author); } catch {}
     const entry = { text: commentText.trim(), author, time: new Date().toISOString(), id: Date.now() };
     if (audioData) entry.audio = audioData;
-    if (imageData) entry.image = imageData;
+    if (imageData) {
+      if (typeof imageData === 'string') {
+        entry.image = imageData;
+      } else {
+        entry.file = imageData.data;
+        entry.fileName = imageData.name;
+        entry.fileType = imageData.type;
+      }
+    }
     const newComments = {
       ...comments,
       [key]: [...(comments[key] || []), entry]
@@ -496,26 +505,58 @@ export default function App() {
     }
   }, [isRecording]);
 
+  const processFile = useCallback((file) => {
+    if (!file) return;
+    if (file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const img = new Image();
+        img.onload = () => {
+          const max = 800;
+          let w = img.width, h = img.height;
+          if (w > max || h > max) { const r = Math.min(max / w, max / h); w *= r; h *= r; }
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+          setImageData(canvas.toDataURL('image/jpeg', 0.7));
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    } else {
+      // Documents (PDF, Word, etc.) — store as base64 with filename
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImageData({ data: reader.result, name: file.name, type: file.type });
+      };
+      reader.readAsDataURL(file);
+    }
+  }, []);
+
   const handleImageUpload = useCallback((e) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const img = new Image();
-      img.onload = () => {
-        const max = 800;
-        let w = img.width, h = img.height;
-        if (w > max || h > max) { const r = Math.min(max / w, max / h); w *= r; h *= r; }
-        const canvas = document.createElement('canvas');
-        canvas.width = w; canvas.height = h;
-        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-        setImageData(canvas.toDataURL('image/jpeg', 0.7));
-      };
-      img.src = reader.result;
-    };
-    reader.readAsDataURL(file);
-    e.target.value = '';
-  }, []);
+    processFile(file);
+    if (e.target) e.target.value = '';
+  }, [processFile]);
+
+  const handlePaste = useCallback((e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        processFile(item.getAsFile());
+        return;
+      }
+    }
+  }, [processFile]);
+
+  const handleDrop = useCallback((e) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer?.files?.[0];
+    if (file) processFile(file);
+  }, [processFile]);
 
   const deleteComment = useCallback(async (secIdx, itemIdx, commentId) => {
     const key = commentKey(secIdx, itemIdx);
@@ -633,19 +674,28 @@ export default function App() {
                 </div>
                 {c.audio && <audio controls src={c.audio} style={{ height: 28, marginTop: 4, maxWidth: '100%' }} />}
                 {c.image && <img src={c.image} alt="screenshot" onClick={() => setModalImage(c.image)} style={{ maxWidth: 200, maxHeight: 120, marginTop: 4, borderRadius: 4, border: '1px solid #e0e0e0', cursor: 'pointer' }} />}
+                {c.file && <a href={c.file} download={c.fileName} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4, padding: '3px 8px', background: '#f5f0e8', borderRadius: 4, fontSize: 11, color: '#8b6914', textDecoration: 'none', border: '1px solid #e0d8c8' }}>📄 {c.fileName}</a>}
               </div>
             ))}
           </div>
         )}
         {isCommenting && (
-          <div style={{ marginTop: 8, display: 'flex', gap: 6, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-            <input ref={inputRef} value={commentAuthor} onChange={e => setCommentAuthor(e.target.value)} placeholder="Your name" style={{ width: 100, padding: '6px 8px', background: '#fff', border: '1px solid #d0d0d0', borderRadius: 4, color: '#1a1a1a', fontSize: 12 }} />
-            <input value={commentText} onChange={e => setCommentText(e.target.value)} onKeyDown={e => e.key === 'Enter' && addComment()} placeholder="Add comment or feedback…" style={{ flex: 1, minWidth: 150, padding: '6px 8px', background: '#fff', border: '1px solid #d0d0d0', borderRadius: 4, color: '#1a1a1a', fontSize: 12 }} />
-            <button onClick={isRecording ? stopRecording : startRecording} title={isRecording ? 'Stop recording' : 'Record audio'} style={{ padding: '6px 8px', background: isRecording ? '#e53935' : 'transparent', color: isRecording ? '#fff' : '#888', border: `1px solid ${isRecording ? '#e53935' : '#d0d0d0'}`, borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>{isRecording ? '⏹' : '🎤'}</button>
-            <button onClick={() => fileInputRef.current?.click()} title="Attach screenshot" style={{ padding: '6px 8px', background: 'transparent', color: '#888', border: '1px solid #d0d0d0', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>📎</button>
-            <input ref={fileInputRef} type="file" accept="image/*" onChange={handleImageUpload} style={{ display: 'none' }} />
-            <button onClick={addComment} style={{ padding: '6px 14px', background: '#8b6914', color: '#fff', border: 'none', borderRadius: 4, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Add</button>
-            <button onClick={() => { setCommentingOn(null); setAudioData(null); setImageData(null); setTranscript(''); if (isRecording) stopRecording(); }} style={{ padding: '6px 10px', background: 'none', color: '#888', border: '1px solid #d0d0d0', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+          <div style={{ marginTop: 8 }} onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={handleDrop}>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start', marginBottom: 6 }}>
+              <input ref={inputRef} value={commentAuthor} onChange={e => setCommentAuthor(e.target.value)} placeholder="Your name" style={{ width: 100, padding: '6px 8px', background: '#fff', border: '1px solid #d0d0d0', borderRadius: 4, color: '#1a1a1a', fontSize: 12 }} />
+              <div style={{ display: 'flex', gap: 4 }}>
+                <button onClick={isRecording ? stopRecording : startRecording} title={isRecording ? 'Stop recording' : 'Record audio'} style={{ padding: '6px 8px', background: isRecording ? '#e53935' : 'transparent', color: isRecording ? '#fff' : '#888', border: `1px solid ${isRecording ? '#e53935' : '#d0d0d0'}`, borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>{isRecording ? '⏹' : '🎤'}</button>
+                <button onClick={() => fileInputRef.current?.click()} title="Attach image or document" style={{ padding: '6px 8px', background: 'transparent', color: '#888', border: '1px solid #d0d0d0', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>📎</button>
+                <input ref={fileInputRef} type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv" onChange={handleImageUpload} style={{ display: 'none' }} />
+              </div>
+            </div>
+            <textarea value={commentText} onChange={e => setCommentText(e.target.value)} onPaste={handlePaste} onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) addComment(); }} placeholder="Add comment or feedback… (paste images, drag files, Cmd+Enter to submit)" style={{ width: '100%', minHeight: 60, padding: '8px 10px', background: dragOver ? 'rgba(74,124,201,0.06)' : '#fff', border: `1.5px ${dragOver ? 'dashed #4a7cc9' : 'solid #d0d0d0'}`, borderRadius: 4, color: '#1a1a1a', fontSize: 12, fontFamily: 'inherit', resize: 'vertical', lineHeight: 1.5, boxSizing: 'border-box', transition: 'border 0.15s, background 0.15s' }} />
+            <div style={{ display: 'flex', gap: 6, marginTop: 6, alignItems: 'center' }}>
+              <button onClick={addComment} style={{ padding: '6px 14px', background: '#8b6914', color: '#fff', border: 'none', borderRadius: 4, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Add</button>
+              <button onClick={() => { setCommentingOn(null); setAudioData(null); setImageData(null); setTranscript(''); setDragOver(false); if (isRecording) stopRecording(); }} style={{ padding: '6px 10px', background: 'none', color: '#888', border: '1px solid #d0d0d0', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+              <span style={{ flex: 1 }} />
+              <span style={{ fontSize: 10, color: '#bbb' }}>Paste, drag & drop, or 📎 to attach</span>
+            </div>
             {isRecording && (
               <div style={{ width: '100%', marginTop: 6, display: 'flex', alignItems: 'center', gap: 8, background: '#fef2f2', border: '1px solid #e5393522', borderRadius: 6, padding: '6px 10px' }}>
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#e53935', animation: 'pulse 1s infinite' }} />
@@ -654,13 +704,14 @@ export default function App() {
               </div>
             )}
             {(audioData || imageData) && (
-              <div style={{ width: '100%', marginTop: 4, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ width: '100%', marginTop: 6, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                 {audioData && <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}><audio controls src={audioData} style={{ height: 28 }} /><button onClick={() => { setCommentText(transcript); }} title="Transcribe audio to text" style={{ padding: '3px 8px', background: transcript ? '#4a7cc9' : '#d0d0d0', color: '#fff', border: 'none', borderRadius: 3, fontSize: 10, fontWeight: 600, cursor: transcript ? 'pointer' : 'default', opacity: transcript ? 1 : 0.5 }}>Transcribe</button><button onClick={() => setAudioData(null)} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 10 }}>✕</button></div>}
-                {imageData && <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}><img src={imageData} alt="preview" style={{ maxWidth: 120, maxHeight: 60, borderRadius: 4, border: '1px solid #e0e0e0' }} /><button onClick={() => setImageData(null)} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 10 }}>✕</button></div>}
+                {imageData && typeof imageData === 'string' && <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}><img src={imageData} alt="preview" style={{ maxWidth: 120, maxHeight: 60, borderRadius: 4, border: '1px solid #e0e0e0' }} /><button onClick={() => setImageData(null)} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 10 }}>✕</button></div>}
+                {imageData && typeof imageData === 'object' && <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ fontSize: 11, color: '#8b6914', background: '#f5f0e8', padding: '3px 8px', borderRadius: 3, border: '1px solid #e0d8c8' }}>📄 {imageData.name}</span><button onClick={() => setImageData(null)} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 10 }}>✕</button></div>}
               </div>
             )}
             {itemComments.length > 0 && (
-              <div style={{ width: '100%', marginTop: 4, paddingLeft: 12, borderLeft: '2px solid #4a7cc944' }}>
+              <div style={{ width: '100%', marginTop: 6, paddingLeft: 12, borderLeft: '2px solid #4a7cc944' }}>
                 {itemComments.map(c => (
                   <div key={c.id} style={{ fontSize: 12, marginBottom: 3 }}>
                     <div style={{ display: 'flex', gap: 8 }}>
@@ -669,7 +720,8 @@ export default function App() {
                       <button onClick={() => deleteComment(activeSection, itemIdx, c.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#999', fontSize: 10 }}>✕</button>
                     </div>
                     {c.audio && <audio controls src={c.audio} style={{ height: 24, marginTop: 2, maxWidth: '100%' }} />}
-                    {c.image && <img src={c.image} alt="" style={{ maxWidth: 120, maxHeight: 60, marginTop: 2, borderRadius: 3, border: '1px solid #e0e0e0' }} />}
+                    {c.image && <img src={c.image} alt="" onClick={() => setModalImage(c.image)} style={{ maxWidth: 120, maxHeight: 60, marginTop: 2, borderRadius: 3, border: '1px solid #e0e0e0', cursor: 'pointer' }} />}
+                    {c.file && <a href={c.file} download={c.fileName} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 2, padding: '2px 6px', background: '#f5f0e8', borderRadius: 3, fontSize: 10, color: '#8b6914', textDecoration: 'none', border: '1px solid #e0d8c8' }}>📄 {c.fileName}</a>}
                   </div>
                 ))}
               </div>
@@ -735,6 +787,7 @@ export default function App() {
                 </div>
                 {c.audio && <audio controls src={c.audio} style={{ height: 28, marginTop: 4, maxWidth: '100%' }} />}
                 {c.image && <img src={c.image} alt="screenshot" onClick={() => setModalImage(c.image)} style={{ maxWidth: 300, maxHeight: 150, marginTop: 4, borderRadius: 4, border: '1px solid #e0e0e0', cursor: 'pointer' }} />}
+                {c.file && <a href={c.file} download={c.fileName} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4, padding: '3px 8px', background: '#f5f0e8', borderRadius: 4, fontSize: 11, color: '#8b6914', textDecoration: 'none', border: '1px solid #e0d8c8' }}>📄 {c.fileName}</a>}
               </div>
             ))}
           </div>

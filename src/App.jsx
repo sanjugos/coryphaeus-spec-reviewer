@@ -293,23 +293,34 @@ const FEATURES_LIST = ["Account Planning", "AI Agents", "AI Safety", "Contact Ce
 
 // Entity catalog: [name, sectionIndex, itemIndex, version, category]
 const ENTITIES = [
-  ["Account",4,8,"2.0","Core"],["Prospect",4,3,"2.0","Core"],["Lead",4,10,"2.0","Core"],["Contact",4,13,"2.0","Core"],
-  ["Opportunity",4,16,"2.0","Core"],["Activity",4,3,"2.0","Core"],["Task",4,3,"2.0","Core"],["Product",4,3,"2.0","Core"],
-  ["Price Book",4,3,"2.0","Core"],["Quote",4,3,"2.0","Core"],["Invoice",5,5,"2.0","Core"],["Sales Order",4,3,"2.0","Core"],
-  ["Purchase Order",4,3,"2.0","Core"],["Case",4,3,"2.0","Core"],["Knowledge Article",4,3,"2.0","Core"],
-  ["Subscription",4,3,"2.0","Core"],["Insights Card",5,15,"2.0","Core"],["Campaign",4,3,"2.0","Core"],
-  ["Website",4,3,"2.0","Core"],["Landing Page",4,3,"2.0","Core"],["Blog",4,3,"2.0","Core"],["Workflow",4,3,"2.0","Core"],
-  ["Rules",4,3,"2.0","Core"],["Integration",4,3,"2.0","Core"],["Report",4,3,"2.0","Core"],["Dashboard",4,3,"2.0","Core"],
-  ["Contract",5,15,"2.0","Core"],["Event",4,3,"2.0","Core"],["Competitor",5,15,"2.0","Core"],
-  ["Offering",5,0,"3.0","New v3.0"],["Account Plan",5,2,"3.0","New v3.0"],["Payment",5,6,"3.0","New v3.0"],
-  ["Case Study",5,9,"3.0","New v3.0"],["SLA",5,13,"3.0","New v3.0"],["Risk Register",5,13,"3.0","New v3.0"],
-  ["Qualification Scoring",5,13,"3.0","New v3.0"],["Employee",5,13,"3.0","New v3.0"],["ICP",5,13,"3.0","New v3.0"],
-  ["Forms",5,13,"3.0","New v3.0"],["Loyalty Points",5,13,"3.0","New v3.0"],
+  // Core entities with dedicated headings in section 5 (05-data-model-core)
+  ["Account",5,8,"2.0","Core"],["Lead",5,10,"2.0","Core"],["Contact",5,13,"2.0","Core"],
+  ["Opportunity",5,16,"2.0","Core"],
+  // Core entities listed in section 5 item 3 (no dedicated heading)
+  ["Prospect",5,3,"2.0","Core"],["Activity",5,3,"2.0","Core"],["Task",5,3,"2.0","Core"],["Product",5,3,"2.0","Core"],
+  ["Price Book",5,3,"2.0","Core"],["Quote",5,3,"2.0","Core"],["Sales Order",5,3,"2.0","Core"],
+  ["Purchase Order",5,3,"2.0","Core"],["Case",5,3,"2.0","Core"],["Knowledge Article",5,3,"2.0","Core"],
+  ["Subscription",5,3,"2.0","Core"],["Campaign",5,3,"2.0","Core"],
+  ["Website",5,3,"2.0","Core"],["Landing Page",5,3,"2.0","Core"],["Blog",5,3,"2.0","Core"],["Workflow",5,3,"2.0","Core"],
+  ["Rules",5,3,"2.0","Core"],["Integration",5,3,"2.0","Core"],["Report",5,3,"2.0","Core"],["Dashboard",5,3,"2.0","Core"],
+  ["Event",5,3,"2.0","Core"],
+  // Revised core entities with headings/mentions in section 6 (06-data-model-new)
+  ["Invoice",6,5,"2.0","Core"],["Contract",6,16,"2.0","Core"],["Competitor",6,16,"2.0","Core"],["Insights Card",6,16,"2.0","Core"],
+  // v3.0 new entities with dedicated headings in section 6
+  ["Offering",6,0,"3.0","New v3.0"],["Account Plan",6,2,"3.0","New v3.0"],["Payment",6,6,"3.0","New v3.0"],
+  ["Case Study",6,9,"3.0","New v3.0"],
+  // v3.0 entities listed in section 6 item 14 (3.13-3.17 Other New Entities)
+  ["SLA",6,14,"3.0","New v3.0"],["Risk Register",6,14,"3.0","New v3.0"],
+  ["Qualification Scoring",6,14,"3.0","New v3.0"],["Employee",6,14,"3.0","New v3.0"],["ICP",6,14,"3.0","New v3.0"],
+  ["Forms",6,14,"3.0","New v3.0"],["Loyalty Points",6,14,"3.0","New v3.0"],
+  // v3.0 entities listed in section 5 item 5 (no dedicated heading)
   ["Email/WhatsApp/SMS Templates",5,5,"3.0","New v3.0"],["Report Template",5,5,"3.0","New v3.0"],
-  ["Complaint (merged into Case)",5,7,"3.1","Revised v3.1"],
-  ["Qualification Sheet",5,11,"3.1","New v3.1"],["Goal (OKR)",5,17,"3.1","New v3.1"],
-  ["Fiscal Year Configuration",5,20,"3.1","New v3.1"],["Sales Target",5,22,"3.1","New v3.1"],
-  ["Monthly Revenue Projection",4,19,"3.1","New v3.1"],["Partner Contribution",4,22,"3.1","New v3.1"],
+  // v3.1 revised/new entities in section 6
+  ["Complaint (merged into Case)",6,7,"3.1","Revised v3.1"],
+  ["Qualification Sheet",6,11,"3.1","New v3.1"],["Goal (OKR)",6,17,"3.1","New v3.1"],
+  ["Fiscal Year Configuration",6,20,"3.1","New v3.1"],["Sales Target",6,22,"3.1","New v3.1"],
+  // v3.1 entities in section 5 (sub-sections of Opportunity)
+  ["Monthly Revenue Projection",5,19,"3.1","New v3.1"],["Partner Contribution",5,22,"3.1","New v3.1"],
 ];
 
 // ── API helpers (Azure Table Storage backed) ──
@@ -419,6 +430,7 @@ export default function App() {
   const [showEntities, setShowEntities] = useState(() => window.location.hash === '#entities');
   const [entitySearch, setEntitySearch] = useState('');
   const [selectedEntity, setSelectedEntity] = useState(null); // entity tuple or null
+  const [cameFromEntities, setCameFromEntities] = useState(null); // entity tuple to return to, or null
   const [modalRect, setModalRect] = useState({ x: 80, y: 40, w: 0, h: 0 }); // 0 = auto
   const dragRef = useRef(null); // { startX, startY, startRectX, startRectY, type: 'move'|'resize-*' }
   const contentRef = useRef(null);
@@ -476,7 +488,8 @@ export default function App() {
     window.location.hash = S[activeSection][0];
   }, [activeSection, showCompetitors, showEntities]);
 
-  const navigateToEntity = useCallback((secIdx, itemIdx) => {
+  const navigateToEntity = useCallback((secIdx, itemIdx, entity) => {
+    setCameFromEntities(entity || true);
     setShowEntities(false); setShowSummary(false); setShowCompetitors(false);
     setActiveSection(secIdx);
     setTimeout(() => {
@@ -1303,7 +1316,19 @@ export default function App() {
     const getEntityContent = (sec, startItem) => {
       const sectionItems = S[sec][3];
       const startType = sectionItems[startItem]?.[1];
-      if (startType !== 'h') return [sectionItems[startItem]]; // paragraph — just return it
+      if (startType !== 'h') {
+        // Non-heading — find preceding heading and include it for context
+        const result = [];
+        for (let i = startItem - 1; i >= 0; i--) {
+          if (sectionItems[i][1] === 'h') { result.push(sectionItems[i]); break; }
+        }
+        // Include items from startItem until next heading
+        for (let i = startItem; i < sectionItems.length; i++) {
+          if (i > startItem && sectionItems[i][1] === 'h') break;
+          result.push(sectionItems[i]);
+        }
+        return result;
+      }
       // Heading — collect heading + following items until next heading at same or higher level
       const result = [sectionItems[startItem]];
       const startText = sectionItems[startItem][2];
@@ -1339,7 +1364,7 @@ export default function App() {
           </div>
           <div style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 24, color: '#1a1a1a', marginBottom: 6 }}>{name}</div>
           <div style={{ fontSize: 12, color: '#888', marginBottom: 20 }}>
-            Section: <button onClick={() => navigateToEntity(sec, item)} style={{ background: 'none', border: 'none', color: '#4a7cc9', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, padding: 0, textDecoration: 'underline' }}>{sectionName} →</button>
+            Section: <button onClick={() => navigateToEntity(sec, item, selectedEntity)} style={{ background: 'none', border: 'none', color: '#4a7cc9', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, padding: 0, textDecoration: 'underline' }}>{sectionName} →</button>
           </div>
           <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 8, padding: '16px 20px' }}>
             {content.map((it, i) => {
@@ -1480,22 +1505,22 @@ export default function App() {
             </label>
           </div>
           <div style={{ flex: 1, overflowY: 'auto', padding: '6px 0' }}>
-            <button className={`sidebar-btn ${showSummary && !showCompetitors && !showEntities ? 'active' : ''}`} onClick={() => { setShowCompetitors(false); setShowEntities(false); setShowSummary(true); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
+            <button className={`sidebar-btn ${showSummary && !showCompetitors && !showEntities ? 'active' : ''}`} onClick={() => { setShowCompetitors(false); setShowEntities(false); setShowSummary(true); setCameFromEntities(null); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
               <span style={{ flex: 1 }}>💬 Comments Summary</span>
               {totalComments > 0 && <span style={{ fontSize: 10, background: '#e8f0fc', color: '#4a7cc9', padding: '1px 5px', borderRadius: 3 }}>{totalComments}</span>}
             </button>
-            <button className={`sidebar-btn ${showCompetitors ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowEntities(false); setShowCompetitors(true); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
+            <button className={`sidebar-btn ${showCompetitors ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowEntities(false); setShowCompetitors(true); setCameFromEntities(null); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
               <span style={{ flex: 1 }}>🎯 Competitors</span>
               {competitorData.length > 0 && <span style={{ fontSize: 10, background: '#fce4ec', color: '#c62828', padding: '1px 5px', borderRadius: 3 }}>{competitorData.length}</span>}
             </button>
-            <button className={`sidebar-btn ${showEntities ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowCompetitors(false); setShowEntities(true); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
+            <button className={`sidebar-btn ${showEntities ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowCompetitors(false); setShowEntities(true); setCameFromEntities(null); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
               <span style={{ flex: 1 }}>🗃️ Entities</span>
               <span style={{ fontSize: 10, background: '#e8eaf6', color: '#3949ab', padding: '1px 5px', borderRadius: 3 }}>{ENTITIES.length}</span>
             </button>
             {filteredSections.map(([s, realIdx]) => {
               const cmtCount = sectionCommentCount(realIdx);
               return (
-                <button key={s[0]} className={`sidebar-btn ${realIdx === activeSection && !showSummary && !showCompetitors && !showEntities ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowCompetitors(false); setShowEntities(false); setActiveSection(realIdx); }}>
+                <button key={s[0]} className={`sidebar-btn ${realIdx === activeSection && !showSummary && !showCompetitors && !showEntities ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowCompetitors(false); setShowEntities(false); setCameFromEntities(null); setActiveSection(realIdx); }}>
                   <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s[1]}</span>
                   <span style={{ display: 'flex', gap: 4 }}>
                     {s[2] > 0 && showChanges && <span style={{ fontSize: 10, background: '#f5e6c8', color: '#8b6914', padding: '1px 5px', borderRadius: 3, fontFamily: 'monospace' }}>{s[2]}</span>}
@@ -1529,6 +1554,16 @@ export default function App() {
             <div style={{ animation: 'fadeIn 0.2s ease' }}>{renderSummaryView()}</div>
           ) : (
             <div style={{ maxWidth: 800, margin: '0 auto', animation: 'fadeIn 0.2s ease' }}>
+              {cameFromEntities && (
+                <button onClick={() => {
+                  setShowEntities(true); setShowSummary(false); setShowCompetitors(false);
+                  if (Array.isArray(cameFromEntities)) setSelectedEntity(cameFromEntities);
+                  setCameFromEntities(null);
+                  setTimeout(() => contentRef.current?.scrollTo(0, 0), 50);
+                }} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', marginBottom: 16, background: '#e8eaf6', border: '1px solid #c5cae9', borderRadius: 6, cursor: 'pointer', fontSize: 12, color: '#3949ab', fontFamily: 'inherit', fontWeight: 500 }}>
+                  ← Back to Entities
+                </button>
+              )}
               {section[3].map(item => renderItem(item))}
             </div>
           )}

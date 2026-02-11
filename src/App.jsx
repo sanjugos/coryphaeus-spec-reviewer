@@ -443,15 +443,15 @@ export default function App() {
       const sizes = { 1: 22, 2: 18, 3: 15 };
       content = (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <h3 style={{ margin: 0, fontSize: sizes[level], fontFamily: "'Instrument Serif', Georgia, serif", fontWeight: 400, color: '#e8e4de', letterSpacing: 0.3 }}>{text}</h3>
+          <h3 style={{ margin: 0, fontSize: sizes[level], fontFamily: "'Instrument Serif', Georgia, serif", fontWeight: 400, color: '#1a1a1a', letterSpacing: 0.3 }}>{text}</h3>
           {isV31 && <span className="badge-v31">NEW v3.1</span>}
         </div>
       );
     } else if (type === 'x') {
       const icon = isInnovation ? '⭐' : '⚡';
-      const bg = isInnovation ? 'rgba(76,175,80,0.08)' : 'rgba(213,168,83,0.08)';
-      const border = isInnovation ? '#4caf5044' : '#d4a85344';
-      const color = isInnovation ? '#81c784' : '#d4a853';
+      const bg = isInnovation ? 'rgba(76,175,80,0.08)' : 'rgba(180,130,40,0.08)';
+      const border = isInnovation ? '#4caf5044' : '#b4822844';
+      const color = isInnovation ? '#2e7d32' : '#8b6914';
       content = (
         <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: 6, padding: '10px 14px', fontSize: 13.5, lineHeight: 1.55, color }}>
           {icon} {text}
@@ -460,7 +460,7 @@ export default function App() {
       );
     } else {
       content = (
-        <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.65, color: '#b8b4ae' }}>
+        <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.65, color: '#444' }}>
           {text}
           {isV31 && <span className="badge-v31" style={{ marginLeft: 6 }}>v3.1</span>}
         </p>
@@ -468,37 +468,37 @@ export default function App() {
     }
 
     return (
-      <div key={itemIdx} className="spec-item" style={{ position: 'relative', marginBottom: type === 'h' ? 8 : 4, padding: '6px 10px', borderRadius: 5, background: isCommenting ? 'rgba(213,168,83,0.06)' : itemComments.length > 0 ? 'rgba(100,149,237,0.04)' : 'transparent', borderLeft: itemComments.length > 0 ? '3px solid #6495ed44' : '3px solid transparent', transition: 'all 0.15s' }}>
+      <div key={itemIdx} className="spec-item" style={{ position: 'relative', marginBottom: type === 'h' ? 8 : 4, padding: '6px 10px', borderRadius: 5, background: isCommenting ? 'rgba(180,130,40,0.06)' : itemComments.length > 0 ? 'rgba(100,149,237,0.06)' : 'transparent', borderLeft: itemComments.length > 0 ? '3px solid #6495ed66' : '3px solid transparent', transition: 'all 0.15s' }}>
         {content}
         <button className="cmt-btn" onClick={() => setCommentingOn(isCommenting ? null : [activeSection, itemIdx])}
-          style={{ position: 'absolute', right: 4, top: 4, opacity: isCommenting || itemComments.length > 0 ? 1 : 0, background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, color: itemComments.length > 0 ? '#6495ed' : '#888', padding: '2px 6px', transition: 'opacity 0.15s' }}>
+          style={{ position: 'absolute', right: 4, top: 4, opacity: isCommenting || itemComments.length > 0 ? 1 : 0, background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, color: itemComments.length > 0 ? '#4a7cc9' : '#999', padding: '2px 6px', transition: 'opacity 0.15s' }}>
           {itemComments.length > 0 ? `💬 ${itemComments.length}` : '💬'}
         </button>
         {itemComments.length > 0 && !isCommenting && (
-          <div style={{ marginTop: 6, paddingLeft: 12, borderLeft: '2px solid #6495ed33' }}>
+          <div style={{ marginTop: 6, paddingLeft: 12, borderLeft: '2px solid #4a7cc944' }}>
             {itemComments.map(c => (
               <div key={c.id} style={{ fontSize: 12, marginBottom: 4, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                <span style={{ fontWeight: 600, color: '#6495ed', whiteSpace: 'nowrap' }}>{c.author}</span>
-                <span style={{ flex: 1, color: '#9db4d4' }}>{c.text}</span>
-                <span style={{ fontSize: 10, color: '#666', whiteSpace: 'nowrap' }}>{new Date(c.time).toLocaleDateString()}</span>
-                <button onClick={() => deleteComment(activeSection, itemIdx, c.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#666', fontSize: 10 }}>✕</button>
+                <span style={{ fontWeight: 600, color: '#4a7cc9', whiteSpace: 'nowrap' }}>{c.author}</span>
+                <span style={{ flex: 1, color: '#555' }}>{c.text}</span>
+                <span style={{ fontSize: 10, color: '#999', whiteSpace: 'nowrap' }}>{new Date(c.time).toLocaleDateString()}</span>
+                <button onClick={() => deleteComment(activeSection, itemIdx, c.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#999', fontSize: 10 }}>✕</button>
               </div>
             ))}
           </div>
         )}
         {isCommenting && (
           <div style={{ marginTop: 8, display: 'flex', gap: 6, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-            <input ref={inputRef} value={commentAuthor} onChange={e => setCommentAuthor(e.target.value)} placeholder="Your name" style={{ width: 100, padding: '6px 8px', background: '#1e1e1e', border: '1px solid #444', borderRadius: 4, color: '#e8e4de', fontSize: 12 }} />
-            <input value={commentText} onChange={e => setCommentText(e.target.value)} onKeyDown={e => e.key === 'Enter' && addComment()} placeholder="Add comment or feedback…" style={{ flex: 1, minWidth: 200, padding: '6px 8px', background: '#1e1e1e', border: '1px solid #444', borderRadius: 4, color: '#e8e4de', fontSize: 12 }} />
-            <button onClick={addComment} style={{ padding: '6px 14px', background: '#d4a853', color: '#1a1a18', border: 'none', borderRadius: 4, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Add</button>
-            <button onClick={() => setCommentingOn(null)} style={{ padding: '6px 10px', background: 'none', color: '#888', border: '1px solid #444', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+            <input ref={inputRef} value={commentAuthor} onChange={e => setCommentAuthor(e.target.value)} placeholder="Your name" style={{ width: 100, padding: '6px 8px', background: '#fff', border: '1px solid #d0d0d0', borderRadius: 4, color: '#1a1a1a', fontSize: 12 }} />
+            <input value={commentText} onChange={e => setCommentText(e.target.value)} onKeyDown={e => e.key === 'Enter' && addComment()} placeholder="Add comment or feedback…" style={{ flex: 1, minWidth: 200, padding: '6px 8px', background: '#fff', border: '1px solid #d0d0d0', borderRadius: 4, color: '#1a1a1a', fontSize: 12 }} />
+            <button onClick={addComment} style={{ padding: '6px 14px', background: '#8b6914', color: '#fff', border: 'none', borderRadius: 4, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Add</button>
+            <button onClick={() => setCommentingOn(null)} style={{ padding: '6px 10px', background: 'none', color: '#888', border: '1px solid #d0d0d0', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>Cancel</button>
             {itemComments.length > 0 && (
-              <div style={{ width: '100%', marginTop: 4, paddingLeft: 12, borderLeft: '2px solid #6495ed33' }}>
+              <div style={{ width: '100%', marginTop: 4, paddingLeft: 12, borderLeft: '2px solid #4a7cc944' }}>
                 {itemComments.map(c => (
                   <div key={c.id} style={{ fontSize: 12, marginBottom: 3, display: 'flex', gap: 8 }}>
-                    <span style={{ fontWeight: 600, color: '#6495ed' }}>{c.author}</span>
-                    <span style={{ flex: 1, color: '#9db4d4' }}>{c.text}</span>
-                    <button onClick={() => deleteComment(activeSection, itemIdx, c.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#666', fontSize: 10 }}>✕</button>
+                    <span style={{ fontWeight: 600, color: '#4a7cc9' }}>{c.author}</span>
+                    <span style={{ flex: 1, color: '#555' }}>{c.text}</span>
+                    <button onClick={() => deleteComment(activeSection, itemIdx, c.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#999', fontSize: 10 }}>✕</button>
                   </div>
                 ))}
               </div>
@@ -509,55 +509,55 @@ export default function App() {
     );
   };
 
-  if (!loaded) return <div style={{ background: '#141412', color: '#888', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Georgia, serif', fontSize: 18 }}>Loading Coryphaeus Spec…</div>;
+  if (!loaded) return <div style={{ background: '#fff', color: '#888', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Georgia, serif', fontSize: 18 }}>Loading Coryphaeus Spec…</div>;
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
       <style>{`
         .spec-item:hover .cmt-btn { opacity: 1 !important; }
-        .badge-v31 { font-size: 10px; background: #b5890033; color: #d4a853; padding: 2px 8px; border-radius: 3px; font-family: 'JetBrains Mono', monospace; font-weight: 600; }
-        .sidebar-btn { display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 16px; background: transparent; border: none; border-left: 3px solid transparent; cursor: pointer; text-align: left; color: #999; font-size: 12.5px; transition: all 0.1s; font-family: inherit; }
-        .sidebar-btn:hover { background: rgba(255,255,255,0.03); color: #ccc; }
-        .sidebar-btn.active { background: rgba(212,168,83,0.07); border-left-color: #d4a853; color: #e8e4de; }
+        .badge-v31 { font-size: 10px; background: #f5e6c8; color: #8b6914; padding: 2px 8px; border-radius: 3px; font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+        .sidebar-btn { display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 16px; background: transparent; border: none; border-left: 3px solid transparent; cursor: pointer; text-align: left; color: #666; font-size: 12.5px; transition: all 0.1s; font-family: inherit; }
+        .sidebar-btn:hover { background: rgba(0,0,0,0.03); color: #333; }
+        .sidebar-btn.active { background: rgba(139,105,20,0.06); border-left-color: #8b6914; color: #1a1a1a; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
       `}</style>
 
       {sidebarOpen && (
-        <div style={{ width: 280, minWidth: 280, background: '#1a1a18', borderRight: '1px solid #2a2a28', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ padding: '16px 16px 12px', borderBottom: '1px solid #2a2a28' }}>
+        <div style={{ width: 280, minWidth: 280, background: '#f8f8f6', borderRight: '1px solid #e0e0e0', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ padding: '16px 16px 12px', borderBottom: '1px solid #e0e0e0' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
               <div>
-                <span style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 20, letterSpacing: 1.5 }}>CORYPHAEUS</span>
+                <span style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 20, letterSpacing: 1.5, color: '#1a1a1a' }}>CORYPHAEUS</span>
                 <span className="badge-v31" style={{ marginLeft: 8 }}>v3.1</span>
               </div>
-              <button onClick={() => setSidebarOpen(false)} style={{ background: 'none', border: 'none', color: '#666', cursor: 'pointer', fontSize: 16 }}>◀</button>
+              <button onClick={() => setSidebarOpen(false)} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 16 }}>◀</button>
             </div>
-            <input id="search-input" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search sections… (⌘K)" style={{ width: '100%', padding: '7px 10px', background: '#141412', border: '1px solid #333', borderRadius: 5, color: '#e8e4de', fontSize: 12, fontFamily: 'inherit' }} />
+            <input id="search-input" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search sections… (⌘K)" style={{ width: '100%', padding: '7px 10px', background: '#fff', border: '1px solid #d0d0d0', borderRadius: 5, color: '#1a1a1a', fontSize: 12, fontFamily: 'inherit' }} />
           </div>
-          <div style={{ padding: '8px 16px', borderBottom: '1px solid #2a2a28', display: 'flex', gap: 12, fontSize: 11, color: '#888' }}>
+          <div style={{ padding: '8px 16px', borderBottom: '1px solid #e0e0e0', display: 'flex', gap: 12, fontSize: 11, color: '#888' }}>
             <span>{S.length} sections</span>
-            <span style={{ color: '#6495ed' }}>💬 {totalComments}</span>
-            <span style={{ color: '#d4a853' }}>97 v3.1 changes</span>
+            <span style={{ color: '#4a7cc9' }}>💬 {totalComments}</span>
+            <span style={{ color: '#8b6914' }}>97 v3.1 changes</span>
             {saving && <span style={{ color: '#4caf50' }}>saving…</span>}
           </div>
-          <div style={{ padding: '8px 16px', borderBottom: '1px solid #2a2a28', display: 'flex', gap: 8 }}>
-            <button onClick={() => setFilterV31(!filterV31)} style={{ padding: '4px 10px', fontSize: 11, background: filterV31 ? '#d4a85322' : 'transparent', color: filterV31 ? '#d4a853' : '#888', border: `1px solid ${filterV31 ? '#d4a85344' : '#333'}`, borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit' }}>
+          <div style={{ padding: '8px 16px', borderBottom: '1px solid #e0e0e0', display: 'flex', gap: 8 }}>
+            <button onClick={() => setFilterV31(!filterV31)} style={{ padding: '4px 10px', fontSize: 11, background: filterV31 ? '#f5e6c8' : 'transparent', color: filterV31 ? '#8b6914' : '#888', border: `1px solid ${filterV31 ? '#d4a85366' : '#d0d0d0'}`, borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit' }}>
               {filterV31 ? '⚡ v3.1 Only' : 'v3.1 Filter'}
             </button>
-            <button onClick={() => setShowVersions(!showVersions)} style={{ padding: '4px 10px', fontSize: 11, background: showVersions ? '#6495ed22' : 'transparent', color: showVersions ? '#6495ed' : '#888', border: `1px solid ${showVersions ? '#6495ed44' : '#333'}`, borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit' }}>
+            <button onClick={() => setShowVersions(!showVersions)} style={{ padding: '4px 10px', fontSize: 11, background: showVersions ? '#e8f0fc' : 'transparent', color: showVersions ? '#4a7cc9' : '#888', border: `1px solid ${showVersions ? '#4a7cc944' : '#d0d0d0'}`, borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit' }}>
               📋 Versions
             </button>
           </div>
           {showVersions && (
-            <div style={{ padding: '10px 16px', borderBottom: '1px solid #2a2a28', background: '#16161488' }}>
+            <div style={{ padding: '10px 16px', borderBottom: '1px solid #e0e0e0', background: '#f0f0ee' }}>
               {VERSIONS.map(v => (
-                <div key={v.id} style={{ padding: '8px 0', borderBottom: '1px solid #222' }}>
+                <div key={v.id} style={{ padding: '8px 0', borderBottom: '1px solid #e0e0e0' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: v.id === '3.1' ? '#d4a853' : '#888' }}>{v.label}</span>
-                    <span style={{ fontSize: 10, color: '#666' }}>{v.date}</span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: v.id === '3.1' ? '#8b6914' : '#888' }}>{v.label}</span>
+                    <span style={{ fontSize: 10, color: '#999' }}>{v.date}</span>
                   </div>
                   <div style={{ fontSize: 11, color: '#777', marginTop: 2 }}>{v.desc}</div>
-                  {v.changes > 0 && <div style={{ fontSize: 10, color: '#d4a853', marginTop: 2 }}>{v.changes} changes</div>}
+                  {v.changes > 0 && <div style={{ fontSize: 10, color: '#8b6914', marginTop: 2 }}>{v.changes} changes</div>}
                 </div>
               ))}
             </div>
@@ -569,8 +569,8 @@ export default function App() {
                 <button key={s[0]} className={`sidebar-btn ${realIdx === activeSection ? 'active' : ''}`} onClick={() => setActiveSection(realIdx)}>
                   <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s[1]}</span>
                   <span style={{ display: 'flex', gap: 4 }}>
-                    {s[2] > 0 && <span style={{ fontSize: 10, background: '#d4a85322', color: '#d4a853', padding: '1px 5px', borderRadius: 3, fontFamily: 'monospace' }}>{s[2]}</span>}
-                    {cmtCount > 0 && <span style={{ fontSize: 10, background: '#6495ed22', color: '#6495ed', padding: '1px 5px', borderRadius: 3 }}>💬{cmtCount}</span>}
+                    {s[2] > 0 && <span style={{ fontSize: 10, background: '#f5e6c8', color: '#8b6914', padding: '1px 5px', borderRadius: 3, fontFamily: 'monospace' }}>{s[2]}</span>}
+                    {cmtCount > 0 && <span style={{ fontSize: 10, background: '#e8f0fc', color: '#4a7cc9', padding: '1px 5px', borderRadius: 3 }}>💬{cmtCount}</span>}
                   </span>
                 </button>
               );
@@ -580,13 +580,13 @@ export default function App() {
       )}
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <div style={{ padding: '10px 20px', borderBottom: '1px solid #2a2a28', display: 'flex', alignItems: 'center', gap: 12, background: '#1a1a18', minHeight: 44 }}>
-          {!sidebarOpen && <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: 16 }}>▶</button>}
+        <div style={{ padding: '10px 20px', borderBottom: '1px solid #e0e0e0', display: 'flex', alignItems: 'center', gap: 12, background: '#f8f8f6', minHeight: 44 }}>
+          {!sidebarOpen && <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 16 }}>▶</button>}
           <div style={{ flex: 1 }}>
-            <span style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 18 }}>{section[1]}</span>
-            <span style={{ fontSize: 11, color: '#666', marginLeft: 10 }}>{section[0]}.md</span>
+            <span style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 18, color: '#1a1a1a' }}>{section[1]}</span>
+            <span style={{ fontSize: 11, color: '#999', marginLeft: 10 }}>{section[0]}.md</span>
           </div>
-          <span style={{ fontSize: 11, color: '#888' }}>{section[3].length} items</span>
+          <span style={{ fontSize: 11, color: '#999' }}>{section[3].length} items</span>
           {section[2] > 0 && <span className="badge-v31">{section[2]} v3.1</span>}
         </div>
         <div ref={contentRef} style={{ flex: 1, overflowY: 'auto', padding: '16px 24px 80px' }}>
@@ -594,16 +594,16 @@ export default function App() {
             {section[3].map(item => renderItem(item))}
           </div>
         </div>
-        <div style={{ padding: '8px 20px', borderTop: '1px solid #2a2a28', background: '#1a1a18', display: 'flex', alignItems: 'center', gap: 16, fontSize: 11, color: '#666' }}>
+        <div style={{ padding: '8px 20px', borderTop: '1px solid #e0e0e0', background: '#f8f8f6', display: 'flex', alignItems: 'center', gap: 16, fontSize: 11, color: '#888' }}>
           <span>Section {activeSection + 1}/{S.length}</span>
           <span>•</span>
-          <span style={{ color: '#6495ed' }}>💬 {totalComments} comments</span>
+          <span style={{ color: '#4a7cc9' }}>💬 {totalComments} comments</span>
           <span>•</span>
           <span>v3.1 — Feb 2026</span>
           {saving && <span style={{ color: '#4caf50' }}>● Saving…</span>}
           <div style={{ flex: 1 }} />
-          <button onClick={() => setActiveSection(Math.max(0, activeSection - 1))} disabled={activeSection === 0} style={{ padding: '4px 12px', background: '#222', color: activeSection === 0 ? '#444' : '#aaa', border: '1px solid #333', borderRadius: 4, cursor: activeSection === 0 ? 'default' : 'pointer', fontSize: 11, fontFamily: 'inherit' }}>← Prev</button>
-          <button onClick={() => setActiveSection(Math.min(S.length - 1, activeSection + 1))} disabled={activeSection === S.length - 1} style={{ padding: '4px 12px', background: '#222', color: activeSection === S.length - 1 ? '#444' : '#aaa', border: '1px solid #333', borderRadius: 4, cursor: activeSection === S.length - 1 ? 'default' : 'pointer', fontSize: 11, fontFamily: 'inherit' }}>Next →</button>
+          <button onClick={() => setActiveSection(Math.max(0, activeSection - 1))} disabled={activeSection === 0} style={{ padding: '4px 12px', background: '#fff', color: activeSection === 0 ? '#ccc' : '#555', border: '1px solid #d0d0d0', borderRadius: 4, cursor: activeSection === 0 ? 'default' : 'pointer', fontSize: 11, fontFamily: 'inherit' }}>← Prev</button>
+          <button onClick={() => setActiveSection(Math.min(S.length - 1, activeSection + 1))} disabled={activeSection === S.length - 1} style={{ padding: '4px 12px', background: '#fff', color: activeSection === S.length - 1 ? '#ccc' : '#555', border: '1px solid #d0d0d0', borderRadius: 4, cursor: activeSection === S.length - 1 ? 'default' : 'pointer', fontSize: 11, fontFamily: 'inherit' }}>Next →</button>
         </div>
       </div>
     </div>

@@ -288,8 +288,8 @@ const VERSIONS = [
   { id: "2.0", date: "Feb 2026", label: "v2.0 — Original", changes: 0, desc: "Original spec with 27 entities, 6 differentiators" },
 ];
 
-const COMPETITORS_LIST = ["Salesforce", "HubSpot", "Dynamics 365", "Zoho", "Pipedrive", "Freshsales", "Monday CRM", "Close", "Copper", "Other"];
-const FEATURES_LIST = ["Account Planning", "AI Agents", "MCP Apps", "AI Safety", "Pricing", "Data Model", "Integrations", "Contact Center", "Marketing", "Workflow", "Security", "Reporting", "Mobile", "General"];
+const COMPETITORS_LIST = ["Close", "Copper", "Dynamics 365", "Freshsales", "HubSpot", "Monday CRM", "Pipedrive", "Salesforce", "Zoho", "Other"];
+const FEATURES_LIST = ["Account Planning", "AI Agents", "AI Safety", "Contact Center", "Data Model", "General", "Integrations", "Marketing", "MCP Apps", "Mobile", "Pricing", "Reporting", "Security", "Workflow"];
 
 // ── API helpers (Azure Table Storage backed) ──
 const API_BASE = "/api/comments";
@@ -386,7 +386,7 @@ export default function App() {
   const [featureFilter, setFeatureFilter] = useState('');
   const [compSearch, setCompSearch] = useState('');
   const [addingIntel, setAddingIntel] = useState(false);
-  const [intelForm, setIntelForm] = useState({ competitor: '', feature: '', title: '', links: [] });
+  const [intelForm, setIntelForm] = useState({ competitor: '', features: [], title: '', links: [] });
   const [newLink, setNewLink] = useState('');
   const [compVideo, setCompVideo] = useState(null);
   const contentRef = useRef(null);
@@ -646,7 +646,7 @@ export default function App() {
     const entry = {
       id: Date.now(), num: nextIntelNum(),
       competitor: intelForm.competitor || 'Other',
-      feature: intelForm.feature || 'General',
+      features: intelForm.features.length > 0 ? intelForm.features : ['General'],
       title: intelForm.title,
       text: hasText ? html : '',
       links: intelForm.links.filter(l => l.trim()),
@@ -661,7 +661,7 @@ export default function App() {
     const newData = [...competitorData, entry];
     setCompetitorData(newData);
     setAddingIntel(false);
-    setIntelForm({ competitor: '', feature: '', title: '', links: [] });
+    setIntelForm({ competitor: '', features: [], title: '', links: [] });
     setNewLink('');
     if (compEditorRef.current) compEditorRef.current.innerHTML = '';
     setAudioData(null);
@@ -937,16 +937,17 @@ export default function App() {
   };
 
   const renderCompetitorsView = () => {
+    const entryFeatures = (e) => e.features || (e.feature ? [e.feature] : []);
     let entries = [...competitorData];
     if (compFilter) entries = entries.filter(e => e.competitor === compFilter);
-    if (featureFilter) entries = entries.filter(e => e.feature === featureFilter);
+    if (featureFilter) entries = entries.filter(e => entryFeatures(e).includes(featureFilter));
     if (compSearch) {
       const q = compSearch.toLowerCase();
       entries = entries.filter(e =>
         (e.title || '').toLowerCase().includes(q) ||
         (e.text || '').replace(/<[^>]*>/g, '').toLowerCase().includes(q) ||
         (e.competitor || '').toLowerCase().includes(q) ||
-        (e.feature || '').toLowerCase().includes(q) ||
+        entryFeatures(e).some(f => f.toLowerCase().includes(q)) ||
         (e.links || []).some(l => l.toLowerCase().includes(q))
       );
     }
@@ -971,19 +972,17 @@ export default function App() {
     return (
       <div style={{ maxWidth: 900, margin: '0 auto' }}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
-          <button onClick={() => { setAddingIntel(true); setAudioData(null); setAttachments([]); setTranscript(''); setCompVideo(null); setIntelForm({ competitor: '', feature: '', title: '', links: [] }); setNewLink(''); }}
+          <button onClick={() => { setAddingIntel(true); setAudioData(null); setAttachments([]); setTranscript(''); setCompVideo(null); setIntelForm({ competitor: '', features: [], title: '', links: [] }); setNewLink(''); }}
             style={{ padding: '7px 14px', background: '#8b6914', color: '#fff', border: 'none', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>+ Add Intel</button>
           <select value={compFilter} onChange={e => setCompFilter(e.target.value)}
             style={{ padding: '6px 8px', fontSize: 12, background: '#fff', color: '#1a1a1a', border: '1px solid #d0d0d0', borderRadius: 4, fontFamily: 'inherit' }}>
             <option value="">All Competitors</option>
-            {COMPETITORS_LIST.map(c => <option key={c} value={c}>{c}</option>)}
-            {[...new Set(competitorData.map(e => e.competitor))].filter(c => !COMPETITORS_LIST.includes(c)).sort().map(c => <option key={c} value={c}>{c}</option>)}
+            {[...new Set([...COMPETITORS_LIST, ...competitorData.map(e => e.competitor)])].filter(Boolean).sort((a, b) => a === 'Other' ? 1 : b === 'Other' ? -1 : a.localeCompare(b)).map(c => <option key={c} value={c}>{c}</option>)}
           </select>
           <select value={featureFilter} onChange={e => setFeatureFilter(e.target.value)}
             style={{ padding: '6px 8px', fontSize: 12, background: '#fff', color: '#1a1a1a', border: '1px solid #d0d0d0', borderRadius: 4, fontFamily: 'inherit' }}>
             <option value="">All Features</option>
-            {FEATURES_LIST.map(f => <option key={f} value={f}>{f}</option>)}
-            {[...new Set(competitorData.map(e => e.feature))].filter(f => !FEATURES_LIST.includes(f)).sort().map(f => <option key={f} value={f}>{f}</option>)}
+            {[...new Set([...FEATURES_LIST, ...competitorData.flatMap(e => e.features || (e.feature ? [e.feature] : []))])].filter(Boolean).sort((a, b) => a === 'General' ? 1 : b === 'General' ? -1 : a.localeCompare(b)).map(f => <option key={f} value={f}>{f}</option>)}
           </select>
           <input value={compSearch} onChange={e => setCompSearch(e.target.value)} placeholder="Search intel…"
             style={{ flex: 1, minWidth: 120, padding: '6px 10px', background: '#fff', border: '1px solid #d0d0d0', borderRadius: 4, fontSize: 12, fontFamily: 'inherit' }} />
@@ -996,17 +995,26 @@ export default function App() {
               <select value={intelForm.competitor} onChange={e => setIntelForm(f => ({ ...f, competitor: e.target.value }))}
                 style={{ padding: '6px 8px', fontSize: 12, background: '#fff', border: '1px solid #d0d0d0', borderRadius: 4, fontFamily: 'inherit', minWidth: 140 }}>
                 <option value="">Select Competitor…</option>
-                {COMPETITORS_LIST.map(c => <option key={c} value={c}>{c}</option>)}
+                {[...new Set([...COMPETITORS_LIST, ...competitorData.map(e => e.competitor)])].filter(Boolean).sort((a, b) => a === 'Other' ? 1 : b === 'Other' ? -1 : a.localeCompare(b)).map(c => <option key={c} value={c}>{c}</option>)}
               </select>
               <input placeholder="Or type custom…" style={{ padding: '6px 8px', fontSize: 12, border: '1px solid #d0d0d0', borderRadius: 4, width: 120, fontFamily: 'inherit' }}
+                onKeyDown={e => { if (e.key === 'Enter' && e.target.value.trim()) { setIntelForm(f => ({ ...f, competitor: e.target.value.trim() })); e.target.value = ''; } }}
                 onBlur={e => { if (e.target.value.trim()) { setIntelForm(f => ({ ...f, competitor: e.target.value.trim() })); e.target.value = ''; } }} />
-              <select value={intelForm.feature} onChange={e => setIntelForm(f => ({ ...f, feature: e.target.value }))}
-                style={{ padding: '6px 8px', fontSize: 12, background: '#fff', border: '1px solid #d0d0d0', borderRadius: 4, fontFamily: 'inherit', minWidth: 140 }}>
-                <option value="">Select Feature…</option>
-                {FEATURES_LIST.map(f => <option key={f} value={f}>{f}</option>)}
-              </select>
-              <input placeholder="Or type custom…" style={{ padding: '6px 8px', fontSize: 12, border: '1px solid #d0d0d0', borderRadius: 4, width: 120, fontFamily: 'inherit' }}
-                onBlur={e => { if (e.target.value.trim()) { setIntelForm(f => ({ ...f, feature: e.target.value.trim() })); e.target.value = ''; } }} />
+            </div>
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Features (select multiple)</div>
+              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 6 }}>
+                {[...new Set([...FEATURES_LIST, ...competitorData.flatMap(e => e.features || (e.feature ? [e.feature] : []))])].filter(Boolean).sort((a, b) => a === 'General' ? 1 : b === 'General' ? -1 : a.localeCompare(b)).map(f => {
+                  const sel = intelForm.features.includes(f);
+                  return <button key={f} onClick={() => setIntelForm(fm => ({ ...fm, features: sel ? fm.features.filter(x => x !== f) : [...fm.features, f] }))}
+                    style={{ padding: '3px 10px', fontSize: 11, borderRadius: 12, border: sel ? '1px solid #2e7d32' : '1px solid #d0d0d0', background: sel ? '#e8f5e9' : '#fff', color: sel ? '#2e7d32' : '#666', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.1s' }}>{f}</button>;
+                })}
+              </div>
+              <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                <input placeholder="Add custom feature…" style={{ padding: '5px 8px', fontSize: 12, border: '1px solid #d0d0d0', borderRadius: 4, width: 160, fontFamily: 'inherit' }}
+                  onKeyDown={e => { if (e.key === 'Enter' && e.target.value.trim()) { const v = e.target.value.trim(); setIntelForm(f => ({ ...f, features: f.features.includes(v) ? f.features : [...f.features, v] })); e.target.value = ''; } }} />
+                <span style={{ fontSize: 10, color: '#bbb' }}>Enter to add</span>
+              </div>
             </div>
             <input value={intelForm.title} onChange={e => setIntelForm(f => ({ ...f, title: e.target.value }))} placeholder="Title"
               style={{ width: '100%', padding: '8px 10px', fontSize: 13, border: '1px solid #d0d0d0', borderRadius: 4, marginBottom: 8, fontFamily: 'inherit', background: '#fff', boxSizing: 'border-box' }} />
@@ -1106,7 +1114,7 @@ export default function App() {
                 <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start', marginBottom: 6, flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", color: '#8b6914', background: '#f5f0e8', padding: '2px 6px', borderRadius: 3, whiteSpace: 'nowrap' }}>I-{String(e.num || 0).padStart(3, '0')}</span>
                   <span style={{ fontSize: 10, background: '#fce4ec', color: '#c62828', padding: '2px 6px', borderRadius: 3 }}>{e.competitor}</span>
-                  <span style={{ fontSize: 10, background: '#e8f5e9', color: '#2e7d32', padding: '2px 6px', borderRadius: 3 }}>{e.feature}</span>
+                  {(e.features || (e.feature ? [e.feature] : [])).map((f, fi) => <span key={fi} style={{ fontSize: 10, background: '#e8f5e9', color: '#2e7d32', padding: '2px 6px', borderRadius: 3 }}>{f}</span>)}
                   <span style={{ flex: 1 }} />
                   <span style={{ fontSize: 11, fontWeight: 600, color: '#4a7cc9' }}>{e.author}</span>
                   <span style={{ fontSize: 10, color: '#999' }}>{new Date(e.time).toLocaleDateString()}</span>

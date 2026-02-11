@@ -353,11 +353,17 @@ export default function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [audioData, setAudioData] = useState(null);
   const [imageData, setImageData] = useState(null);
+  const [recordingTime, setRecordingTime] = useState(0);
   const contentRef = useRef(null);
   const inputRef = useRef(null);
   const fileInputRef = useRef(null);
+  const canvasRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
+  const analyserRef = useRef(null);
+  const animFrameRef = useRef(null);
+  const audioCtxRef = useRef(null);
+  const timerRef = useRef(null);
 
   useEffect(() => {
     apiGet().then(c => { setComments(c); setLoaded(true); });
@@ -395,6 +401,35 @@ export default function App() {
     setSaving(false);
   }, [commentText, commentAuthor, commentingOn, comments, audioData, imageData]);
 
+  const drawWaveform = useCallback(() => {
+    const canvas = canvasRef.current;
+    const analyser = analyserRef.current;
+    if (!canvas || !analyser) return;
+    const ctx = canvas.getContext('2d');
+    const bufLen = analyser.frequencyBinCount;
+    const data = new Uint8Array(bufLen);
+    const draw = () => {
+      animFrameRef.current = requestAnimationFrame(draw);
+      analyser.getByteTimeDomainData(data);
+      const w = canvas.width, h = canvas.height;
+      ctx.fillStyle = '#faf8f5';
+      ctx.fillRect(0, 0, w, h);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#e53935';
+      ctx.beginPath();
+      const sliceW = w / bufLen;
+      let x = 0;
+      for (let i = 0; i < bufLen; i++) {
+        const y = (data[i] / 255) * h;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        x += sliceW;
+      }
+      ctx.lineTo(w, h / 2);
+      ctx.stroke();
+    };
+    draw();
+  }, []);
+
   const startRecording = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -407,17 +442,34 @@ export default function App() {
         reader.onloadend = () => setAudioData(reader.result);
         reader.readAsDataURL(blob);
         stream.getTracks().forEach(t => t.stop());
+        if (audioCtxRef.current) { audioCtxRef.current.close(); audioCtxRef.current = null; }
+        cancelAnimationFrame(animFrameRef.current);
+        clearInterval(timerRef.current);
+        analyserRef.current = null;
       };
+      // Set up audio analyser for waveform
+      const audioCtx = new AudioContext();
+      const source = audioCtx.createMediaStreamSource(stream);
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+      audioCtxRef.current = audioCtx;
+      analyserRef.current = analyser;
       mediaRecorderRef.current = mr;
       mr.start();
+      setRecordingTime(0);
+      timerRef.current = setInterval(() => setRecordingTime(t => t + 1), 1000);
       setIsRecording(true);
+      // Start drawing after canvas mounts (next frame)
+      requestAnimationFrame(() => drawWaveform());
     } catch { /* mic permission denied */ }
-  }, []);
+  }, [drawWaveform]);
 
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
+      setRecordingTime(0);
     }
   }, [isRecording]);
 
@@ -570,7 +622,14 @@ export default function App() {
             <button onClick={() => fileInputRef.current?.click()} title="Attach screenshot" style={{ padding: '6px 8px', background: 'transparent', color: '#888', border: '1px solid #d0d0d0', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>📎</button>
             <input ref={fileInputRef} type="file" accept="image/*" onChange={handleImageUpload} style={{ display: 'none' }} />
             <button onClick={addComment} style={{ padding: '6px 14px', background: '#8b6914', color: '#fff', border: 'none', borderRadius: 4, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Add</button>
-            <button onClick={() => { setCommentingOn(null); setAudioData(null); setImageData(null); }} style={{ padding: '6px 10px', background: 'none', color: '#888', border: '1px solid #d0d0d0', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+            <button onClick={() => { setCommentingOn(null); setAudioData(null); setImageData(null); if (isRecording) stopRecording(); }} style={{ padding: '6px 10px', background: 'none', color: '#888', border: '1px solid #d0d0d0', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+            {isRecording && (
+              <div style={{ width: '100%', marginTop: 6, display: 'flex', alignItems: 'center', gap: 8, background: '#fef2f2', border: '1px solid #e5393522', borderRadius: 6, padding: '6px 10px' }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#e53935', animation: 'pulse 1s infinite' }} />
+                <canvas ref={canvasRef} width={240} height={32} style={{ flex: 1, maxWidth: 240, height: 32, borderRadius: 3 }} />
+                <span style={{ fontSize: 11, color: '#e53935', fontFamily: "'JetBrains Mono', monospace", minWidth: 32 }}>{Math.floor(recordingTime / 60)}:{String(recordingTime % 60).padStart(2, '0')}</span>
+              </div>
+            )}
             {(audioData || imageData) && (
               <div style={{ width: '100%', marginTop: 4, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                 {audioData && <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}><audio controls src={audioData} style={{ height: 28 }} /><button onClick={() => setAudioData(null)} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 10 }}>✕</button></div>}
@@ -672,6 +731,7 @@ export default function App() {
         .sidebar-btn:hover { background: rgba(0,0,0,0.03); color: #333; }
         .sidebar-btn.active { background: rgba(139,105,20,0.06); border-left-color: #8b6914; color: #1a1a1a; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
       `}</style>
 
       {sidebarOpen && (

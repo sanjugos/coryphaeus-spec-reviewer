@@ -358,7 +358,8 @@ export default function App() {
     })();
   }, []);
   const [search, setSearch] = useState("");
-  const [showVersions, setShowVersions] = useState(false);
+  const [selectedVersion, setSelectedVersion] = useState("3.1");
+  const [showChanges, setShowChanges] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [loaded, setLoaded] = useState(false);
   const [filterV31, setFilterV31] = useState(false);
@@ -437,6 +438,7 @@ export default function App() {
     const isCommenting = commentingOn && commentingOn[0] === activeSection && commentingOn[1] === itemIdx;
 
     if (filterV31 && !isV31 && type !== 'h') return null;
+    if (!showChanges && type === 'x') return null;
 
     let content;
     if (type === 'h') {
@@ -445,7 +447,7 @@ export default function App() {
       content = (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <h3 style={{ margin: 0, fontSize: sizes[level], fontFamily: "'Instrument Serif', Georgia, serif", fontWeight: 400, color: '#1a1a1a', letterSpacing: 0.3 }}>{text}</h3>
-          {isV31 && <span className="badge-v31">NEW v3.1</span>}
+          {isV31 && showChanges && <span className="badge-v31">NEW v3.1</span>}
         </div>
       );
     } else if (type === 'x') {
@@ -456,14 +458,14 @@ export default function App() {
       content = (
         <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: 6, padding: '10px 14px', fontSize: 13.5, lineHeight: 1.55, color }}>
           {icon} {text}
-          {isV31 && <span className="badge-v31" style={{ marginLeft: 8 }}>v3.1</span>}
+          {isV31 && showChanges && <span className="badge-v31" style={{ marginLeft: 8 }}>v3.1</span>}
         </div>
       );
     } else {
       content = (
         <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.65, color: '#444' }}>
           {text}
-          {isV31 && <span className="badge-v31" style={{ marginLeft: 6 }}>v3.1</span>}
+          {isV31 && showChanges && <span className="badge-v31" style={{ marginLeft: 6 }}>v3.1</span>}
         </p>
       );
     }
@@ -599,34 +601,24 @@ export default function App() {
           <div style={{ padding: '8px 16px', borderBottom: '1px solid #e0e0e0', display: 'flex', gap: 12, fontSize: 11, color: '#888' }}>
             <span>{S.length} sections</span>
             <span style={{ color: '#4a7cc9' }}>💬 {totalComments}</span>
-            <span style={{ color: '#8b6914' }}>97 v3.1 changes</span>
+            {showChanges && <span style={{ color: '#8b6914' }}>97 v3.1 changes</span>}
             {saving && <span style={{ color: '#4caf50' }}>saving…</span>}
           </div>
-          <div style={{ padding: '8px 16px', borderBottom: '1px solid #e0e0e0', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            <button onClick={() => setFilterV31(!filterV31)} style={{ padding: '4px 8px', fontSize: 11, background: filterV31 ? '#f5e6c8' : 'transparent', color: filterV31 ? '#8b6914' : '#888', border: `1px solid ${filterV31 ? '#d4a85366' : '#d0d0d0'}`, borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit' }}>
-              {filterV31 ? '⚡ v3.1 Only' : 'v3.1 Filter'}
-            </button>
-            <button onClick={() => setShowVersions(!showVersions)} style={{ padding: '4px 8px', fontSize: 11, background: showVersions ? '#e8f0fc' : 'transparent', color: showVersions ? '#4a7cc9' : '#888', border: `1px solid ${showVersions ? '#4a7cc944' : '#d0d0d0'}`, borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit' }}>
-              Versions
-            </button>
-            <button onClick={() => setShowSummary(!showSummary)} style={{ padding: '4px 8px', fontSize: 11, background: showSummary ? '#e8f0fc' : 'transparent', color: showSummary ? '#4a7cc9' : '#888', border: `1px solid ${showSummary ? '#4a7cc944' : '#d0d0d0'}`, borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit' }}>
+          <div style={{ padding: '8px 16px', borderBottom: '1px solid #e0e0e0', display: 'flex', gap: 6, alignItems: 'center' }}>
+            <select value={selectedVersion} onChange={e => setSelectedVersion(e.target.value)} style={{ padding: '4px 6px', fontSize: 11, background: '#fff', color: '#1a1a1a', border: '1px solid #d0d0d0', borderRadius: 4, fontFamily: 'inherit', cursor: 'pointer' }}>
+              {VERSIONS.map(v => <option key={v.id} value={v.id}>{v.label}</option>)}
+            </select>
+            <span style={{ fontSize: 11, color: '#888', marginLeft: 2 }}>Changes</span>
+            <label style={{ fontSize: 11, color: showChanges ? '#8b6914' : '#888', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 2 }}>
+              <input type="radio" name="showChanges" checked={showChanges} onChange={() => setShowChanges(true)} style={{ margin: 0, accentColor: '#8b6914' }} /> Yes
+            </label>
+            <label style={{ fontSize: 11, color: !showChanges ? '#8b6914' : '#888', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 2 }}>
+              <input type="radio" name="showChanges" checked={!showChanges} onChange={() => setShowChanges(false)} style={{ margin: 0, accentColor: '#8b6914' }} /> No
+            </label>
+            <button onClick={() => setShowSummary(!showSummary)} style={{ marginLeft: 'auto', padding: '4px 8px', fontSize: 11, background: showSummary ? '#e8f0fc' : 'transparent', color: showSummary ? '#4a7cc9' : '#888', border: `1px solid ${showSummary ? '#4a7cc944' : '#d0d0d0'}`, borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit' }}>
               💬 Summary
             </button>
           </div>
-          {showVersions && (
-            <div style={{ padding: '10px 16px', borderBottom: '1px solid #e0e0e0', background: '#f0f0ee' }}>
-              {VERSIONS.map(v => (
-                <div key={v.id} style={{ padding: '8px 0', borderBottom: '1px solid #e0e0e0' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: v.id === '3.1' ? '#8b6914' : '#888' }}>{v.label}</span>
-                    <span style={{ fontSize: 10, color: '#999' }}>{v.date}</span>
-                  </div>
-                  <div style={{ fontSize: 11, color: '#777', marginTop: 2 }}>{v.desc}</div>
-                  {v.changes > 0 && <div style={{ fontSize: 10, color: '#8b6914', marginTop: 2 }}>{v.changes} changes</div>}
-                </div>
-              ))}
-            </div>
-          )}
           <div style={{ flex: 1, overflowY: 'auto', padding: '6px 0' }}>
             {filteredSections.map(([s, realIdx]) => {
               const cmtCount = sectionCommentCount(realIdx);
@@ -634,7 +626,7 @@ export default function App() {
                 <button key={s[0]} className={`sidebar-btn ${realIdx === activeSection && !showSummary ? 'active' : ''}`} onClick={() => { setShowSummary(false); setActiveSection(realIdx); }}>
                   <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s[1]}</span>
                   <span style={{ display: 'flex', gap: 4 }}>
-                    {s[2] > 0 && <span style={{ fontSize: 10, background: '#f5e6c8', color: '#8b6914', padding: '1px 5px', borderRadius: 3, fontFamily: 'monospace' }}>{s[2]}</span>}
+                    {s[2] > 0 && showChanges && <span style={{ fontSize: 10, background: '#f5e6c8', color: '#8b6914', padding: '1px 5px', borderRadius: 3, fontFamily: 'monospace' }}>{s[2]}</span>}
                     {cmtCount > 0 && <span style={{ fontSize: 10, background: '#e8f0fc', color: '#4a7cc9', padding: '1px 5px', borderRadius: 3 }}>💬{cmtCount}</span>}
                   </span>
                 </button>
@@ -652,7 +644,7 @@ export default function App() {
             <span style={{ fontSize: 11, color: '#999', marginLeft: 10 }}>{showSummary ? 'All sections' : `${section[0]}.md`}</span>
           </div>
           {!showSummary && <span style={{ fontSize: 11, color: '#999' }}>{section[3].length} items</span>}
-          {!showSummary && section[2] > 0 && <span className="badge-v31">{section[2]} v3.1</span>}
+          {!showSummary && section[2] > 0 && showChanges && <span className="badge-v31">{section[2]} v3.1</span>}
         </div>
         <div ref={contentRef} style={{ flex: 1, overflowY: 'auto', padding: '16px 24px 80px' }}>
           {showSummary ? (

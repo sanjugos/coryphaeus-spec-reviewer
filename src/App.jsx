@@ -350,8 +350,14 @@ export default function App() {
   const [filterV31, setFilterV31] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [audioData, setAudioData] = useState(null);
+  const [imageData, setImageData] = useState(null);
   const contentRef = useRef(null);
   const inputRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
 
   useEffect(() => {
     apiGet().then(c => { setComments(c); setLoaded(true); });
@@ -368,21 +374,73 @@ export default function App() {
   };
 
   const addComment = useCallback(async () => {
-    if (!commentText.trim() || !commentingOn) return;
+    if ((!commentText.trim() && !audioData && !imageData) || !commentingOn) return;
     const key = commentKey(commentingOn[0], commentingOn[1]);
     const author = commentAuthor.trim() || "Reviewer";
     try { localStorage.setItem("spec-author", author); } catch {}
+    const entry = { text: commentText.trim(), author, time: new Date().toISOString(), id: Date.now() };
+    if (audioData) entry.audio = audioData;
+    if (imageData) entry.image = imageData;
     const newComments = {
       ...comments,
-      [key]: [...(comments[key] || []), { text: commentText.trim(), author, time: new Date().toISOString(), id: Date.now() }]
+      [key]: [...(comments[key] || []), entry]
     };
     setComments(newComments);
     setCommentText("");
+    setAudioData(null);
+    setImageData(null);
     setCommentingOn(null);
     setSaving(true);
     await apiSave(newComments);
     setSaving(false);
-  }, [commentText, commentAuthor, commentingOn, comments]);
+  }, [commentText, commentAuthor, commentingOn, comments, audioData, imageData]);
+
+  const startRecording = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mr = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4' });
+      audioChunksRef.current = [];
+      mr.ondataavailable = e => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
+      mr.onstop = () => {
+        const blob = new Blob(audioChunksRef.current, { type: mr.mimeType });
+        const reader = new FileReader();
+        reader.onloadend = () => setAudioData(reader.result);
+        reader.readAsDataURL(blob);
+        stream.getTracks().forEach(t => t.stop());
+      };
+      mediaRecorderRef.current = mr;
+      mr.start();
+      setIsRecording(true);
+    } catch { /* mic permission denied */ }
+  }, []);
+
+  const stopRecording = useCallback(() => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  }, [isRecording]);
+
+  const handleImageUpload = useCallback((e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const img = new Image();
+      img.onload = () => {
+        const max = 800;
+        let w = img.width, h = img.height;
+        if (w > max || h > max) { const r = Math.min(max / w, max / h); w *= r; h *= r; }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        setImageData(canvas.toDataURL('image/jpeg', 0.7));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  }, []);
 
   const deleteComment = useCallback(async (secIdx, itemIdx, commentId) => {
     const key = commentKey(secIdx, itemIdx);
@@ -491,11 +549,15 @@ export default function App() {
         {itemComments.length > 0 && !isCommenting && (
           <div style={{ marginTop: 6, paddingLeft: 12, borderLeft: '2px solid #4a7cc944' }}>
             {itemComments.map(c => (
-              <div key={c.id} style={{ fontSize: 12, marginBottom: 4, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                <span style={{ fontWeight: 600, color: '#4a7cc9', whiteSpace: 'nowrap' }}>{c.author}</span>
-                <span style={{ flex: 1, color: '#555' }}>{c.text}</span>
-                <span style={{ fontSize: 10, color: '#999', whiteSpace: 'nowrap' }}>{new Date(c.time).toLocaleDateString()}</span>
-                <button onClick={() => deleteComment(activeSection, itemIdx, c.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#999', fontSize: 10 }}>✕</button>
+              <div key={c.id} style={{ fontSize: 12, marginBottom: 4 }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                  <span style={{ fontWeight: 600, color: '#4a7cc9', whiteSpace: 'nowrap' }}>{c.author}</span>
+                  <span style={{ flex: 1, color: '#555' }}>{c.text}</span>
+                  <span style={{ fontSize: 10, color: '#999', whiteSpace: 'nowrap' }}>{new Date(c.time).toLocaleDateString()}</span>
+                  <button onClick={() => deleteComment(activeSection, itemIdx, c.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#999', fontSize: 10 }}>✕</button>
+                </div>
+                {c.audio && <audio controls src={c.audio} style={{ height: 28, marginTop: 4, maxWidth: '100%' }} />}
+                {c.image && <img src={c.image} alt="screenshot" onClick={() => window.open(c.image)} style={{ maxWidth: 200, maxHeight: 120, marginTop: 4, borderRadius: 4, border: '1px solid #e0e0e0', cursor: 'pointer' }} />}
               </div>
             ))}
           </div>
@@ -503,16 +565,29 @@ export default function App() {
         {isCommenting && (
           <div style={{ marginTop: 8, display: 'flex', gap: 6, alignItems: 'flex-start', flexWrap: 'wrap' }}>
             <input ref={inputRef} value={commentAuthor} onChange={e => setCommentAuthor(e.target.value)} placeholder="Your name" style={{ width: 100, padding: '6px 8px', background: '#fff', border: '1px solid #d0d0d0', borderRadius: 4, color: '#1a1a1a', fontSize: 12 }} />
-            <input value={commentText} onChange={e => setCommentText(e.target.value)} onKeyDown={e => e.key === 'Enter' && addComment()} placeholder="Add comment or feedback…" style={{ flex: 1, minWidth: 200, padding: '6px 8px', background: '#fff', border: '1px solid #d0d0d0', borderRadius: 4, color: '#1a1a1a', fontSize: 12 }} />
+            <input value={commentText} onChange={e => setCommentText(e.target.value)} onKeyDown={e => e.key === 'Enter' && addComment()} placeholder="Add comment or feedback…" style={{ flex: 1, minWidth: 150, padding: '6px 8px', background: '#fff', border: '1px solid #d0d0d0', borderRadius: 4, color: '#1a1a1a', fontSize: 12 }} />
+            <button onClick={isRecording ? stopRecording : startRecording} title={isRecording ? 'Stop recording' : 'Record audio'} style={{ padding: '6px 8px', background: isRecording ? '#e53935' : 'transparent', color: isRecording ? '#fff' : '#888', border: `1px solid ${isRecording ? '#e53935' : '#d0d0d0'}`, borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>{isRecording ? '⏹' : '🎤'}</button>
+            <button onClick={() => fileInputRef.current?.click()} title="Attach screenshot" style={{ padding: '6px 8px', background: 'transparent', color: '#888', border: '1px solid #d0d0d0', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>📎</button>
+            <input ref={fileInputRef} type="file" accept="image/*" onChange={handleImageUpload} style={{ display: 'none' }} />
             <button onClick={addComment} style={{ padding: '6px 14px', background: '#8b6914', color: '#fff', border: 'none', borderRadius: 4, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Add</button>
-            <button onClick={() => setCommentingOn(null)} style={{ padding: '6px 10px', background: 'none', color: '#888', border: '1px solid #d0d0d0', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+            <button onClick={() => { setCommentingOn(null); setAudioData(null); setImageData(null); }} style={{ padding: '6px 10px', background: 'none', color: '#888', border: '1px solid #d0d0d0', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+            {(audioData || imageData) && (
+              <div style={{ width: '100%', marginTop: 4, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                {audioData && <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}><audio controls src={audioData} style={{ height: 28 }} /><button onClick={() => setAudioData(null)} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 10 }}>✕</button></div>}
+                {imageData && <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}><img src={imageData} alt="preview" style={{ maxWidth: 120, maxHeight: 60, borderRadius: 4, border: '1px solid #e0e0e0' }} /><button onClick={() => setImageData(null)} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 10 }}>✕</button></div>}
+              </div>
+            )}
             {itemComments.length > 0 && (
               <div style={{ width: '100%', marginTop: 4, paddingLeft: 12, borderLeft: '2px solid #4a7cc944' }}>
                 {itemComments.map(c => (
-                  <div key={c.id} style={{ fontSize: 12, marginBottom: 3, display: 'flex', gap: 8 }}>
-                    <span style={{ fontWeight: 600, color: '#4a7cc9' }}>{c.author}</span>
-                    <span style={{ flex: 1, color: '#555' }}>{c.text}</span>
-                    <button onClick={() => deleteComment(activeSection, itemIdx, c.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#999', fontSize: 10 }}>✕</button>
+                  <div key={c.id} style={{ fontSize: 12, marginBottom: 3 }}>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <span style={{ fontWeight: 600, color: '#4a7cc9' }}>{c.author}</span>
+                      <span style={{ flex: 1, color: '#555' }}>{c.text}</span>
+                      <button onClick={() => deleteComment(activeSection, itemIdx, c.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#999', fontSize: 10 }}>✕</button>
+                    </div>
+                    {c.audio && <audio controls src={c.audio} style={{ height: 24, marginTop: 2, maxWidth: '100%' }} />}
+                    {c.image && <img src={c.image} alt="" style={{ maxWidth: 120, maxHeight: 60, marginTop: 2, borderRadius: 3, border: '1px solid #e0e0e0' }} />}
                   </div>
                 ))}
               </div>
@@ -576,6 +651,8 @@ export default function App() {
                   <button onClick={(e) => { e.stopPropagation(); deleteComment(c.secIdx, c.itemIdx, c.id); }}
                     style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#999', fontSize: 10, padding: '0 2px' }}>✕</button>
                 </div>
+                {c.audio && <audio controls src={c.audio} style={{ height: 28, marginTop: 4, maxWidth: '100%' }} />}
+                {c.image && <img src={c.image} alt="screenshot" onClick={() => window.open(c.image)} style={{ maxWidth: 300, maxHeight: 150, marginTop: 4, borderRadius: 4, border: '1px solid #e0e0e0', cursor: 'pointer' }} />}
               </div>
             ))}
           </div>
@@ -626,11 +703,12 @@ export default function App() {
             <label style={{ fontSize: 11, color: !showChanges ? '#8b6914' : '#888', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 2 }}>
               <input type="radio" name="showChanges" checked={!showChanges} onChange={() => setShowChanges(false)} style={{ margin: 0, accentColor: '#8b6914' }} /> No
             </label>
-            <button onClick={() => setShowSummary(!showSummary)} style={{ padding: '4px 8px', fontSize: 11, background: showSummary ? '#e8f0fc' : 'transparent', color: showSummary ? '#4a7cc9' : '#888', border: `1px solid ${showSummary ? '#4a7cc944' : '#d0d0d0'}`, borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit' }}>
-              💬 Summary
-            </button>
           </div>
           <div style={{ flex: 1, overflowY: 'auto', padding: '6px 0' }}>
+            <button className={`sidebar-btn ${showSummary ? 'active' : ''}`} onClick={() => setShowSummary(true)} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
+              <span style={{ flex: 1 }}>💬 Comments Summary</span>
+              {totalComments > 0 && <span style={{ fontSize: 10, background: '#e8f0fc', color: '#4a7cc9', padding: '1px 5px', borderRadius: 3 }}>{totalComments}</span>}
+            </button>
             {filteredSections.map(([s, realIdx]) => {
               const cmtCount = sectionCommentCount(realIdx);
               return (

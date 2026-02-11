@@ -602,9 +602,9 @@ export default function App() {
             <span style={{ color: '#8b6914' }}>97 v3.1 changes</span>
             {saving && <span style={{ color: '#4caf50' }}>saving…</span>}
           </div>
-          <div style={{ padding: '8px 16px', borderBottom: '1px solid #e0e0e0', display: 'flex', gap: 6 }}>
+          <div style={{ padding: '8px 16px', borderBottom: '1px solid #e0e0e0', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             <button onClick={() => setFilterV31(!filterV31)} style={{ padding: '4px 8px', fontSize: 11, background: filterV31 ? '#f5e6c8' : 'transparent', color: filterV31 ? '#8b6914' : '#888', border: `1px solid ${filterV31 ? '#d4a85366' : '#d0d0d0'}`, borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit' }}>
-              {filterV31 ? '⚡ v3.1' : 'v3.1'}
+              {filterV31 ? '⚡ v3.1 Only' : 'v3.1 Filter'}
             </button>
             <button onClick={() => setShowVersions(!showVersions)} style={{ padding: '4px 8px', fontSize: 11, background: showVersions ? '#e8f0fc' : 'transparent', color: showVersions ? '#4a7cc9' : '#888', border: `1px solid ${showVersions ? '#4a7cc944' : '#d0d0d0'}`, borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit' }}>
               Versions

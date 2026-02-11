@@ -352,7 +352,7 @@ export default function App() {
   const [showSummary, setShowSummary] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [audioData, setAudioData] = useState(null);
-  const [imageData, setImageData] = useState(null);
+  const [attachments, setAttachments] = useState([]);
   const [recordingTime, setRecordingTime] = useState(0);
   const [modalImage, setModalImage] = useState(null);
   const [transcript, setTranscript] = useState('');
@@ -384,20 +384,19 @@ export default function App() {
   };
 
   const addComment = useCallback(async () => {
-    if ((!commentText.trim() && !audioData && !imageData) || !commentingOn) return;
+    if ((!commentText.trim() && !audioData && attachments.length === 0) || !commentingOn) return;
     const key = commentKey(commentingOn[0], commentingOn[1]);
     const author = commentAuthor.trim() || "Reviewer";
     try { localStorage.setItem("spec-author", author); } catch {}
     const entry = { text: commentText.trim(), author, time: new Date().toISOString(), id: Date.now() };
     if (audioData) entry.audio = audioData;
-    if (imageData) {
-      if (typeof imageData === 'string') {
-        entry.image = imageData;
-      } else {
-        entry.file = imageData.data;
-        entry.fileName = imageData.name;
-        entry.fileType = imageData.type;
-      }
+    if (attachments.length > 0) {
+      const images = attachments.filter(a => a.isImage).map(a => a.data);
+      const files = attachments.filter(a => !a.isImage).map(a => ({ data: a.data, name: a.name, type: a.fileType }));
+      if (images.length === 1) entry.image = images[0];
+      else if (images.length > 1) entry.images = images;
+      if (files.length === 1) { entry.file = files[0].data; entry.fileName = files[0].name; entry.fileType = files[0].type; }
+      else if (files.length > 1) entry.files = files;
     }
     const newComments = {
       ...comments,
@@ -406,13 +405,13 @@ export default function App() {
     setComments(newComments);
     setCommentText("");
     setAudioData(null);
-    setImageData(null);
+    setAttachments([]);
     setTranscript('');
     setCommentingOn(null);
     setSaving(true);
     await apiSave(newComments);
     setSaving(false);
-  }, [commentText, commentAuthor, commentingOn, comments, audioData, imageData]);
+  }, [commentText, commentAuthor, commentingOn, comments, audioData, attachments]);
 
   const drawWaveform = useCallback(() => {
     const canvas = canvasRef.current;
@@ -507,6 +506,7 @@ export default function App() {
 
   const processFile = useCallback((file) => {
     if (!file) return;
+    const id = Date.now() + Math.random();
     if (file.type.startsWith('image/')) {
       const reader = new FileReader();
       reader.onloadend = () => {
@@ -518,44 +518,45 @@ export default function App() {
           const canvas = document.createElement('canvas');
           canvas.width = w; canvas.height = h;
           canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-          setImageData(canvas.toDataURL('image/jpeg', 0.7));
+          setAttachments(prev => [...prev, { id, data: canvas.toDataURL('image/jpeg', 0.7), name: file.name, isImage: true }]);
         };
         img.src = reader.result;
       };
       reader.readAsDataURL(file);
     } else {
-      // Documents (PDF, Word, etc.) — store as base64 with filename
       const reader = new FileReader();
       reader.onloadend = () => {
-        setImageData({ data: reader.result, name: file.name, type: file.type });
+        setAttachments(prev => [...prev, { id, data: reader.result, name: file.name, fileType: file.type, isImage: false }]);
       };
       reader.readAsDataURL(file);
     }
   }, []);
 
-  const handleImageUpload = useCallback((e) => {
-    const file = e.target.files?.[0];
-    processFile(file);
+  const handleFileUpload = useCallback((e) => {
+    const files = e.target.files;
+    if (!files) return;
+    Array.from(files).forEach(f => processFile(f));
     if (e.target) e.target.value = '';
   }, [processFile]);
 
   const handlePaste = useCallback((e) => {
     const items = e.clipboardData?.items;
     if (!items) return;
+    let handled = false;
     for (const item of items) {
       if (item.type.startsWith('image/')) {
-        e.preventDefault();
         processFile(item.getAsFile());
-        return;
+        handled = true;
       }
     }
+    if (handled) e.preventDefault();
   }, [processFile]);
 
   const handleDrop = useCallback((e) => {
     e.preventDefault();
     setDragOver(false);
-    const file = e.dataTransfer?.files?.[0];
-    if (file) processFile(file);
+    const files = e.dataTransfer?.files;
+    if (files) Array.from(files).forEach(f => processFile(f));
   }, [processFile]);
 
   const deleteComment = useCallback(async (secIdx, itemIdx, commentId) => {
@@ -587,6 +588,17 @@ export default function App() {
   const filteredSections = search
     ? S.map((s, i) => [s, i]).filter(([s]) => s[1].toLowerCase().includes(search.toLowerCase()) || s[3].some(it => it[2]?.toLowerCase().includes(search.toLowerCase())))
     : S.map((s, i) => [s, i]);
+
+  const renderAttachments = (c, maxImgW = 200, maxImgH = 120) => {
+    const imgs = c.images ? c.images : c.image ? [c.image] : [];
+    const docs = c.files ? c.files : c.file ? [{ data: c.file, name: c.fileName }] : [];
+    return (
+      <>
+        {imgs.length > 0 && <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>{imgs.map((src, i) => <img key={i} src={src} alt="screenshot" onClick={() => setModalImage(src)} style={{ maxWidth: maxImgW, maxHeight: maxImgH, borderRadius: 4, border: '1px solid #e0e0e0', cursor: 'pointer' }} />)}</div>}
+        {docs.length > 0 && <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>{docs.map((d, i) => <a key={i} href={d.data} download={d.name} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', background: '#f5f0e8', borderRadius: 4, fontSize: 11, color: '#8b6914', textDecoration: 'none', border: '1px solid #e0d8c8' }}>📄 {d.name}</a>)}</div>}
+      </>
+    );
+  };
 
   const renderItem = (item) => {
     const [itemIdx, type, text, flag] = item;
@@ -673,8 +685,7 @@ export default function App() {
                   <button onClick={() => deleteComment(activeSection, itemIdx, c.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#999', fontSize: 10 }}>✕</button>
                 </div>
                 {c.audio && <audio controls src={c.audio} style={{ height: 28, marginTop: 4, maxWidth: '100%' }} />}
-                {c.image && <img src={c.image} alt="screenshot" onClick={() => setModalImage(c.image)} style={{ maxWidth: 200, maxHeight: 120, marginTop: 4, borderRadius: 4, border: '1px solid #e0e0e0', cursor: 'pointer' }} />}
-                {c.file && <a href={c.file} download={c.fileName} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4, padding: '3px 8px', background: '#f5f0e8', borderRadius: 4, fontSize: 11, color: '#8b6914', textDecoration: 'none', border: '1px solid #e0d8c8' }}>📄 {c.fileName}</a>}
+                {renderAttachments(c)}
               </div>
             ))}
           </div>
@@ -686,13 +697,13 @@ export default function App() {
               <div style={{ display: 'flex', gap: 4 }}>
                 <button onClick={isRecording ? stopRecording : startRecording} title={isRecording ? 'Stop recording' : 'Record audio'} style={{ padding: '6px 8px', background: isRecording ? '#e53935' : 'transparent', color: isRecording ? '#fff' : '#888', border: `1px solid ${isRecording ? '#e53935' : '#d0d0d0'}`, borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>{isRecording ? '⏹' : '🎤'}</button>
                 <button onClick={() => fileInputRef.current?.click()} title="Attach image or document" style={{ padding: '6px 8px', background: 'transparent', color: '#888', border: '1px solid #d0d0d0', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>📎</button>
-                <input ref={fileInputRef} type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv" onChange={handleImageUpload} style={{ display: 'none' }} />
+                <input ref={fileInputRef} type="file" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv" onChange={handleFileUpload} style={{ display: 'none' }} />
               </div>
             </div>
             <textarea value={commentText} onChange={e => setCommentText(e.target.value)} onPaste={handlePaste} onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) addComment(); }} placeholder="Add comment or feedback… (paste images, drag files, Cmd+Enter to submit)" style={{ width: '100%', minHeight: 60, padding: '8px 10px', background: dragOver ? 'rgba(74,124,201,0.06)' : '#fff', border: `1.5px ${dragOver ? 'dashed #4a7cc9' : 'solid #d0d0d0'}`, borderRadius: 4, color: '#1a1a1a', fontSize: 12, fontFamily: 'inherit', resize: 'vertical', lineHeight: 1.5, boxSizing: 'border-box', transition: 'border 0.15s, background 0.15s' }} />
             <div style={{ display: 'flex', gap: 6, marginTop: 6, alignItems: 'center' }}>
               <button onClick={addComment} style={{ padding: '6px 14px', background: '#8b6914', color: '#fff', border: 'none', borderRadius: 4, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Add</button>
-              <button onClick={() => { setCommentingOn(null); setAudioData(null); setImageData(null); setTranscript(''); setDragOver(false); if (isRecording) stopRecording(); }} style={{ padding: '6px 10px', background: 'none', color: '#888', border: '1px solid #d0d0d0', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={() => { setCommentingOn(null); setAudioData(null); setAttachments([]); setTranscript(''); setDragOver(false); if (isRecording) stopRecording(); }} style={{ padding: '6px 10px', background: 'none', color: '#888', border: '1px solid #d0d0d0', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>Cancel</button>
               <span style={{ flex: 1 }} />
               <span style={{ fontSize: 10, color: '#bbb' }}>Paste, drag & drop, or 📎 to attach</span>
             </div>
@@ -703,11 +714,14 @@ export default function App() {
                 <span style={{ fontSize: 11, color: '#e53935', fontFamily: "'JetBrains Mono', monospace", minWidth: 32 }}>{Math.floor(recordingTime / 60)}:{String(recordingTime % 60).padStart(2, '0')}</span>
               </div>
             )}
-            {(audioData || imageData) && (
+            {(audioData || attachments.length > 0) && (
               <div style={{ width: '100%', marginTop: 6, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                 {audioData && <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}><audio controls src={audioData} style={{ height: 28 }} /><button onClick={() => { setCommentText(transcript); }} title="Transcribe audio to text" style={{ padding: '3px 8px', background: transcript ? '#4a7cc9' : '#d0d0d0', color: '#fff', border: 'none', borderRadius: 3, fontSize: 10, fontWeight: 600, cursor: transcript ? 'pointer' : 'default', opacity: transcript ? 1 : 0.5 }}>Transcribe</button><button onClick={() => setAudioData(null)} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 10 }}>✕</button></div>}
-                {imageData && typeof imageData === 'string' && <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}><img src={imageData} alt="preview" style={{ maxWidth: 120, maxHeight: 60, borderRadius: 4, border: '1px solid #e0e0e0' }} /><button onClick={() => setImageData(null)} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 10 }}>✕</button></div>}
-                {imageData && typeof imageData === 'object' && <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ fontSize: 11, color: '#8b6914', background: '#f5f0e8', padding: '3px 8px', borderRadius: 3, border: '1px solid #e0d8c8' }}>📄 {imageData.name}</span><button onClick={() => setImageData(null)} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 10 }}>✕</button></div>}
+                {attachments.map(a => a.isImage ? (
+                  <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}><img src={a.data} alt="preview" style={{ maxWidth: 80, maxHeight: 50, borderRadius: 4, border: '1px solid #e0e0e0' }} /><button onClick={() => setAttachments(prev => prev.filter(x => x.id !== a.id))} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 10 }}>✕</button></div>
+                ) : (
+                  <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ fontSize: 11, color: '#8b6914', background: '#f5f0e8', padding: '3px 8px', borderRadius: 3, border: '1px solid #e0d8c8' }}>📄 {a.name}</span><button onClick={() => setAttachments(prev => prev.filter(x => x.id !== a.id))} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 10 }}>✕</button></div>
+                ))}
               </div>
             )}
             {itemComments.length > 0 && (
@@ -720,8 +734,7 @@ export default function App() {
                       <button onClick={() => deleteComment(activeSection, itemIdx, c.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#999', fontSize: 10 }}>✕</button>
                     </div>
                     {c.audio && <audio controls src={c.audio} style={{ height: 24, marginTop: 2, maxWidth: '100%' }} />}
-                    {c.image && <img src={c.image} alt="" onClick={() => setModalImage(c.image)} style={{ maxWidth: 120, maxHeight: 60, marginTop: 2, borderRadius: 3, border: '1px solid #e0e0e0', cursor: 'pointer' }} />}
-                    {c.file && <a href={c.file} download={c.fileName} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 2, padding: '2px 6px', background: '#f5f0e8', borderRadius: 3, fontSize: 10, color: '#8b6914', textDecoration: 'none', border: '1px solid #e0d8c8' }}>📄 {c.fileName}</a>}
+                    {renderAttachments(c, 120, 60)}
                   </div>
                 ))}
               </div>
@@ -786,8 +799,7 @@ export default function App() {
                     style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#999', fontSize: 10, padding: '0 2px' }}>✕</button>
                 </div>
                 {c.audio && <audio controls src={c.audio} style={{ height: 28, marginTop: 4, maxWidth: '100%' }} />}
-                {c.image && <img src={c.image} alt="screenshot" onClick={() => setModalImage(c.image)} style={{ maxWidth: 300, maxHeight: 150, marginTop: 4, borderRadius: 4, border: '1px solid #e0e0e0', cursor: 'pointer' }} />}
-                {c.file && <a href={c.file} download={c.fileName} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4, padding: '3px 8px', background: '#f5f0e8', borderRadius: 4, fontSize: 11, color: '#8b6914', textDecoration: 'none', border: '1px solid #e0d8c8' }}>📄 {c.fileName}</a>}
+                {renderAttachments(c, 300, 150)}
               </div>
             ))}
           </div>

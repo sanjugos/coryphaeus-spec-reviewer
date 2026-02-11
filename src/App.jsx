@@ -288,6 +288,9 @@ const VERSIONS = [
   { id: "2.0", date: "Feb 2026", label: "v2.0 — Original", changes: 0, desc: "Original spec with 27 entities, 6 differentiators" },
 ];
 
+const COMPETITORS_LIST = ["Salesforce", "HubSpot", "Dynamics 365", "Zoho", "Pipedrive", "Freshsales", "Monday CRM", "Close", "Copper", "Other"];
+const FEATURES_LIST = ["Account Planning", "AI Agents", "MCP Apps", "AI Safety", "Pricing", "Data Model", "Integrations", "Contact Center", "Marketing", "Workflow", "Security", "Reporting", "Mobile", "General"];
+
 // ── API helpers (Azure Table Storage backed) ──
 const API_BASE = "/api/comments";
 
@@ -308,6 +311,27 @@ async function apiSave(data) {
     if (!r.ok) throw new Error(r.statusText);
   } catch {
     try { localStorage.setItem("coryphaeus-comments", JSON.stringify(data)); } catch {}
+  }
+}
+
+const COMP_API = "/api/competitors";
+
+async function compApiGet() {
+  try {
+    const r = await fetch(COMP_API);
+    if (!r.ok) throw new Error(r.statusText);
+    return await r.json();
+  } catch {
+    try { return JSON.parse(localStorage.getItem("coryphaeus-competitors") || "[]"); } catch { return []; }
+  }
+}
+
+async function compApiSave(data) {
+  try {
+    const r = await fetch(COMP_API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+    if (!r.ok) throw new Error(r.statusText);
+  } catch {
+    try { localStorage.setItem("coryphaeus-competitors", JSON.stringify(data)); } catch {}
   }
 }
 
@@ -356,6 +380,15 @@ export default function App() {
   const [modalImage, setModalImage] = useState(null);
   const [transcript, setTranscript] = useState('');
   const [dragOver, setDragOver] = useState(false);
+  const [showCompetitors, setShowCompetitors] = useState(() => window.location.hash === '#competitors');
+  const [competitorData, setCompetitorData] = useState([]);
+  const [compFilter, setCompFilter] = useState('');
+  const [featureFilter, setFeatureFilter] = useState('');
+  const [compSearch, setCompSearch] = useState('');
+  const [addingIntel, setAddingIntel] = useState(false);
+  const [intelForm, setIntelForm] = useState({ competitor: '', feature: '', title: '', links: [] });
+  const [newLink, setNewLink] = useState('');
+  const [compVideo, setCompVideo] = useState(null);
   const contentRef = useRef(null);
   const inputRef = useRef(null);
   const editorRef = useRef(null);
@@ -368,6 +401,9 @@ export default function App() {
   const audioCtxRef = useRef(null);
   const timerRef = useRef(null);
   const recognitionRef = useRef(null);
+  const compEditorRef = useRef(null);
+  const compFileInputRef = useRef(null);
+  const compVideoInputRef = useRef(null);
 
   // Derive next comment number from highest existing num
   const nextCommentNum = useCallback(() => {
@@ -375,6 +411,12 @@ export default function App() {
     Object.values(comments).forEach(arr => arr.forEach(c => { if (c.num > max) max = c.num; }));
     return max + 1;
   }, [comments]);
+
+  const nextIntelNum = useCallback(() => {
+    let max = 0;
+    competitorData.forEach(e => { if (e.num > max) max = e.num; });
+    return max + 1;
+  }, [competitorData]);
 
   useEffect(() => {
     apiGet().then(raw => {
@@ -392,9 +434,14 @@ export default function App() {
       setLoaded(true);
       if (needsSave) apiSave(c);
     });
+    compApiGet().then(data => setCompetitorData(Array.isArray(data) ? data : []));
   }, []);
 
-  useEffect(() => { contentRef.current?.scrollTo(0, 0); window.location.hash = S[activeSection][0]; }, [activeSection]);
+  useEffect(() => {
+    if (showCompetitors) { window.location.hash = 'competitors'; return; }
+    contentRef.current?.scrollTo(0, 0);
+    window.location.hash = S[activeSection][0];
+  }, [activeSection, showCompetitors]);
 
   const commentKey = (secIdx, itemIdx) => `${S[secIdx][0]}-${itemIdx}`;
   const getComments = (secIdx, itemIdx) => comments[commentKey(secIdx, itemIdx)] || [];
@@ -592,6 +639,48 @@ export default function App() {
     setSaving(false);
   }, [comments]);
 
+  const addIntel = useCallback(async () => {
+    const html = compEditorRef.current ? compEditorRef.current.innerHTML : '';
+    const hasText = html.replace(/<[^>]*>/g, '').trim().length > 0;
+    if (!intelForm.competitor && !intelForm.title && !hasText && !audioData && attachments.length === 0) return;
+    const entry = {
+      id: Date.now(), num: nextIntelNum(),
+      competitor: intelForm.competitor || 'Other',
+      feature: intelForm.feature || 'General',
+      title: intelForm.title,
+      text: hasText ? html : '',
+      links: intelForm.links.filter(l => l.trim()),
+      images: attachments.filter(a => a.isImage).map(a => a.data),
+      files: attachments.filter(a => !a.isImage).map(a => ({ data: a.data, name: a.name, type: a.fileType })),
+      audio: audioData || null,
+      video: compVideo || null,
+      author: commentAuthor.trim() || 'Reviewer',
+      time: new Date().toISOString(),
+      version: '3.1'
+    };
+    const newData = [...competitorData, entry];
+    setCompetitorData(newData);
+    setAddingIntel(false);
+    setIntelForm({ competitor: '', feature: '', title: '', links: [] });
+    setNewLink('');
+    if (compEditorRef.current) compEditorRef.current.innerHTML = '';
+    setAudioData(null);
+    setAttachments([]);
+    setCompVideo(null);
+    setTranscript('');
+    setSaving(true);
+    await compApiSave(newData);
+    setSaving(false);
+  }, [intelForm, competitorData, attachments, audioData, compVideo, commentAuthor, nextIntelNum]);
+
+  const deleteIntel = useCallback(async (id) => {
+    const newData = competitorData.filter(e => e.id !== id);
+    setCompetitorData(newData);
+    setSaving(true);
+    await compApiSave(newData);
+    setSaving(false);
+  }, [competitorData]);
+
   useEffect(() => {
     if (commentingOn && inputRef.current) inputRef.current.focus();
   }, [commentingOn]);
@@ -599,8 +688,8 @@ export default function App() {
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e) => {
-      if (e.key === 'ArrowRight' && !commentingOn) { setShowSummary(false); setActiveSection(s => Math.min(S.length - 1, s + 1)); }
-      if (e.key === 'ArrowLeft' && !commentingOn) { setShowSummary(false); setActiveSection(s => Math.max(0, s - 1)); }
+      if (e.key === 'ArrowRight' && !commentingOn) { setShowSummary(false); setShowCompetitors(false); setActiveSection(s => Math.min(S.length - 1, s + 1)); }
+      if (e.key === 'ArrowLeft' && !commentingOn) { setShowSummary(false); setShowCompetitors(false); setActiveSection(s => Math.max(0, s - 1)); }
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); document.querySelector('#search-input')?.focus(); }
     };
     window.addEventListener('keydown', handler);
@@ -847,6 +936,219 @@ export default function App() {
     );
   };
 
+  const renderCompetitorsView = () => {
+    let entries = [...competitorData];
+    if (compFilter) entries = entries.filter(e => e.competitor === compFilter);
+    if (featureFilter) entries = entries.filter(e => e.feature === featureFilter);
+    if (compSearch) {
+      const q = compSearch.toLowerCase();
+      entries = entries.filter(e =>
+        (e.title || '').toLowerCase().includes(q) ||
+        (e.text || '').replace(/<[^>]*>/g, '').toLowerCase().includes(q) ||
+        (e.competitor || '').toLowerCase().includes(q) ||
+        (e.feature || '').toLowerCase().includes(q) ||
+        (e.links || []).some(l => l.toLowerCase().includes(q))
+      );
+    }
+    const grouped = {};
+    entries.forEach(e => { const c = e.competitor || 'Other'; if (!grouped[c]) grouped[c] = []; grouped[c].push(e); });
+    Object.values(grouped).forEach(arr => arr.sort((a, b) => new Date(b.time) - new Date(a.time)));
+    const sortedKeys = Object.keys(grouped).sort();
+
+    const getVideoEmbed = (url) => {
+      const yt = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]+)/);
+      if (yt) return `https://www.youtube.com/embed/${yt[1]}`;
+      const vm = url.match(/vimeo\.com\/(\d+)/);
+      if (vm) return `https://player.vimeo.com/video/${vm[1]}`;
+      return null;
+    };
+
+    const toolbarBtn = (cmd, label, extra = {}) => (
+      <button key={cmd} title={cmd} onMouseDown={e => { e.preventDefault(); document.execCommand(cmd, false, extra.value); }}
+        style={{ padding: '2px 7px', background: 'transparent', border: '1px solid transparent', borderRadius: 3, cursor: 'pointer', fontSize: 12, fontWeight: cmd === 'bold' ? 700 : 400, fontStyle: cmd === 'italic' ? 'italic' : 'normal', textDecoration: cmd === 'underline' ? 'underline' : cmd === 'strikeThrough' ? 'line-through' : 'none', color: '#555', lineHeight: 1.3 }}>{label}</button>
+    );
+
+    return (
+      <div style={{ maxWidth: 900, margin: '0 auto' }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
+          <button onClick={() => { setAddingIntel(true); setAudioData(null); setAttachments([]); setTranscript(''); setCompVideo(null); setIntelForm({ competitor: '', feature: '', title: '', links: [] }); setNewLink(''); }}
+            style={{ padding: '7px 14px', background: '#8b6914', color: '#fff', border: 'none', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>+ Add Intel</button>
+          <select value={compFilter} onChange={e => setCompFilter(e.target.value)}
+            style={{ padding: '6px 8px', fontSize: 12, background: '#fff', color: '#1a1a1a', border: '1px solid #d0d0d0', borderRadius: 4, fontFamily: 'inherit' }}>
+            <option value="">All Competitors</option>
+            {COMPETITORS_LIST.map(c => <option key={c} value={c}>{c}</option>)}
+            {[...new Set(competitorData.map(e => e.competitor))].filter(c => !COMPETITORS_LIST.includes(c)).sort().map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <select value={featureFilter} onChange={e => setFeatureFilter(e.target.value)}
+            style={{ padding: '6px 8px', fontSize: 12, background: '#fff', color: '#1a1a1a', border: '1px solid #d0d0d0', borderRadius: 4, fontFamily: 'inherit' }}>
+            <option value="">All Features</option>
+            {FEATURES_LIST.map(f => <option key={f} value={f}>{f}</option>)}
+            {[...new Set(competitorData.map(e => e.feature))].filter(f => !FEATURES_LIST.includes(f)).sort().map(f => <option key={f} value={f}>{f}</option>)}
+          </select>
+          <input value={compSearch} onChange={e => setCompSearch(e.target.value)} placeholder="Search intel…"
+            style={{ flex: 1, minWidth: 120, padding: '6px 10px', background: '#fff', border: '1px solid #d0d0d0', borderRadius: 4, fontSize: 12, fontFamily: 'inherit' }} />
+        </div>
+
+        {addingIntel && (
+          <div style={{ marginBottom: 20, padding: 16, background: '#fafaf8', border: '1px solid #e0e0e0', borderRadius: 8 }}
+            onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={handleDrop}>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+              <select value={intelForm.competitor} onChange={e => setIntelForm(f => ({ ...f, competitor: e.target.value }))}
+                style={{ padding: '6px 8px', fontSize: 12, background: '#fff', border: '1px solid #d0d0d0', borderRadius: 4, fontFamily: 'inherit', minWidth: 140 }}>
+                <option value="">Select Competitor…</option>
+                {COMPETITORS_LIST.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <input placeholder="Or type custom…" style={{ padding: '6px 8px', fontSize: 12, border: '1px solid #d0d0d0', borderRadius: 4, width: 120, fontFamily: 'inherit' }}
+                onBlur={e => { if (e.target.value.trim()) { setIntelForm(f => ({ ...f, competitor: e.target.value.trim() })); e.target.value = ''; } }} />
+              <select value={intelForm.feature} onChange={e => setIntelForm(f => ({ ...f, feature: e.target.value }))}
+                style={{ padding: '6px 8px', fontSize: 12, background: '#fff', border: '1px solid #d0d0d0', borderRadius: 4, fontFamily: 'inherit', minWidth: 140 }}>
+                <option value="">Select Feature…</option>
+                {FEATURES_LIST.map(f => <option key={f} value={f}>{f}</option>)}
+              </select>
+              <input placeholder="Or type custom…" style={{ padding: '6px 8px', fontSize: 12, border: '1px solid #d0d0d0', borderRadius: 4, width: 120, fontFamily: 'inherit' }}
+                onBlur={e => { if (e.target.value.trim()) { setIntelForm(f => ({ ...f, feature: e.target.value.trim() })); e.target.value = ''; } }} />
+            </div>
+            <input value={intelForm.title} onChange={e => setIntelForm(f => ({ ...f, title: e.target.value }))} placeholder="Title"
+              style={{ width: '100%', padding: '8px 10px', fontSize: 13, border: '1px solid #d0d0d0', borderRadius: 4, marginBottom: 8, fontFamily: 'inherit', background: '#fff', boxSizing: 'border-box' }} />
+            <div style={{ border: `1.5px ${dragOver ? 'dashed #4a7cc9' : 'solid #d0d0d0'}`, borderRadius: 4, background: dragOver ? 'rgba(74,124,201,0.06)' : '#fff', marginBottom: 8, transition: 'border 0.15s, background 0.15s' }}>
+              <div style={{ display: 'flex', gap: 2, padding: '4px 6px', borderBottom: '1px solid #e8e8e8', background: '#fafafa', borderRadius: '4px 4px 0 0', flexWrap: 'wrap' }}>
+                {toolbarBtn('bold', 'B')}
+                {toolbarBtn('italic', 'I')}
+                {toolbarBtn('underline', 'U')}
+                {toolbarBtn('strikeThrough', 'S̶')}
+                <span style={{ width: 1, background: '#e0e0e0', margin: '2px 4px' }} />
+                <button title="Bullet list" onMouseDown={e => { e.preventDefault(); document.execCommand('insertUnorderedList'); }} style={{ padding: '2px 7px', background: 'transparent', border: '1px solid transparent', borderRadius: 3, cursor: 'pointer', fontSize: 12, color: '#555' }}>• List</button>
+                <button title="Numbered list" onMouseDown={e => { e.preventDefault(); document.execCommand('insertOrderedList'); }} style={{ padding: '2px 7px', background: 'transparent', border: '1px solid transparent', borderRadius: 3, cursor: 'pointer', fontSize: 12, color: '#555' }}>1. List</button>
+                <span style={{ width: 1, background: '#e0e0e0', margin: '2px 4px' }} />
+                <button title="Highlight" onMouseDown={e => { e.preventDefault(); document.execCommand('hiliteColor', false, '#fff3cd'); }} style={{ padding: '2px 7px', background: 'transparent', border: '1px solid transparent', borderRadius: 3, cursor: 'pointer', fontSize: 12, color: '#555' }}>🖍</button>
+                <button title="Clear formatting" onMouseDown={e => { e.preventDefault(); document.execCommand('removeFormat'); }} style={{ padding: '2px 7px', background: 'transparent', border: '1px solid transparent', borderRadius: 3, cursor: 'pointer', fontSize: 11, color: '#999' }}>T̸</button>
+              </div>
+              <div ref={compEditorRef} contentEditable suppressContentEditableWarning onPaste={handlePaste}
+                onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); addIntel(); } }}
+                data-placeholder="Add notes or analysis…"
+                className="rtf-editor"
+                style={{ minHeight: 120, maxHeight: 300, overflowY: 'auto', padding: '8px 10px', color: '#1a1a1a', fontSize: 12.5, fontFamily: 'inherit', lineHeight: 1.6, outline: 'none' }} />
+            </div>
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
+                <input value={newLink} onChange={e => setNewLink(e.target.value)} placeholder="Add URL link…"
+                  onKeyDown={e => { if (e.key === 'Enter' && newLink.trim()) { setIntelForm(f => ({ ...f, links: [...f.links, newLink.trim()] })); setNewLink(''); } }}
+                  style={{ flex: 1, padding: '6px 8px', fontSize: 12, border: '1px solid #d0d0d0', borderRadius: 4, fontFamily: 'inherit' }} />
+                <button onClick={() => { if (newLink.trim()) { setIntelForm(f => ({ ...f, links: [...f.links, newLink.trim()] })); setNewLink(''); } }}
+                  style={{ padding: '6px 10px', background: '#fff', border: '1px solid #d0d0d0', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>+</button>
+              </div>
+              {intelForm.links.map((l, i) => (
+                <div key={i} style={{ display: 'flex', gap: 4, alignItems: 'center', fontSize: 11, marginBottom: 2 }}>
+                  <span style={{ flex: 1, color: '#4a7cc9', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>🔗 {l}</span>
+                  <button onClick={() => setIntelForm(f => ({ ...f, links: f.links.filter((_, j) => j !== i) }))}
+                    style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 10 }}>✕</button>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
+              <button onClick={isRecording ? stopRecording : startRecording} title={isRecording ? 'Stop recording' : 'Record audio'}
+                style={{ padding: '6px 8px', background: isRecording ? '#e53935' : 'transparent', color: isRecording ? '#fff' : '#888', border: `1px solid ${isRecording ? '#e53935' : '#d0d0d0'}`, borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>{isRecording ? '⏹' : '🎤'}</button>
+              <button onClick={() => compFileInputRef.current?.click()} title="Attach files/images"
+                style={{ padding: '6px 8px', background: 'transparent', color: '#888', border: '1px solid #d0d0d0', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>📎</button>
+              <input ref={compFileInputRef} type="file" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv" onChange={handleFileUpload} style={{ display: 'none' }} />
+              <button onClick={() => compVideoInputRef.current?.click()} title="Upload video"
+                style={{ padding: '6px 8px', background: 'transparent', color: '#888', border: '1px solid #d0d0d0', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>🎬</button>
+              <input ref={compVideoInputRef} type="file" accept="video/*" onChange={e => {
+                const f = e.target.files?.[0];
+                if (f) { const reader = new FileReader(); reader.onloadend = () => setCompVideo(reader.result); reader.readAsDataURL(f); }
+                e.target.value = '';
+              }} style={{ display: 'none' }} />
+              <span style={{ flex: 1 }} />
+              <span style={{ fontSize: 10, color: '#bbb', alignSelf: 'center' }}>Paste, drag & drop, or 📎 to attach</span>
+            </div>
+            {isRecording && (
+              <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8, background: '#fef2f2', border: '1px solid #e5393522', borderRadius: 6, padding: '6px 10px' }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#e53935', animation: 'pulse 1s infinite' }} />
+                <canvas ref={canvasRef} width={240} height={32} style={{ flex: 1, maxWidth: 240, height: 32, borderRadius: 3 }} />
+                <span style={{ fontSize: 11, color: '#e53935', fontFamily: "'JetBrains Mono', monospace", minWidth: 32 }}>{Math.floor(recordingTime / 60)}:{String(recordingTime % 60).padStart(2, '0')}</span>
+              </div>
+            )}
+            {(audioData || attachments.length > 0 || compVideo) && (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8, alignItems: 'center' }}>
+                {audioData && <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}><audio controls src={audioData} style={{ height: 28 }} /><button onClick={() => { if (compEditorRef.current && transcript) compEditorRef.current.innerText = transcript; }} title="Transcribe" style={{ padding: '3px 8px', background: transcript ? '#4a7cc9' : '#d0d0d0', color: '#fff', border: 'none', borderRadius: 3, fontSize: 10, fontWeight: 600, cursor: transcript ? 'pointer' : 'default', opacity: transcript ? 1 : 0.5 }}>Transcribe</button><button onClick={() => setAudioData(null)} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 10 }}>✕</button></div>}
+                {attachments.map(a => a.isImage ? (
+                  <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}><img src={a.data} alt="preview" style={{ maxWidth: 80, maxHeight: 50, borderRadius: 4, border: '1px solid #e0e0e0' }} /><button onClick={() => setAttachments(prev => prev.filter(x => x.id !== a.id))} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 10 }}>✕</button></div>
+                ) : (
+                  <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ fontSize: 11, color: '#8b6914', background: '#f5f0e8', padding: '3px 8px', borderRadius: 3, border: '1px solid #e0d8c8' }}>📄 {a.name}</span><button onClick={() => setAttachments(prev => prev.filter(x => x.id !== a.id))} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 10 }}>✕</button></div>
+                ))}
+                {compVideo && <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}><video src={compVideo} style={{ maxWidth: 120, maxHeight: 70, borderRadius: 4 }} /><button onClick={() => setCompVideo(null)} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 10 }}>✕</button></div>}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button onClick={addIntel} style={{ padding: '6px 14px', background: '#8b6914', color: '#fff', border: 'none', borderRadius: 4, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Add Intel</button>
+              <button onClick={() => { setAddingIntel(false); setAudioData(null); setAttachments([]); setCompVideo(null); setTranscript(''); setDragOver(false); if (isRecording) stopRecording(); }}
+                style={{ padding: '6px 10px', background: 'none', color: '#888', border: '1px solid #d0d0d0', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+            </div>
+          </div>
+        )}
+
+        {entries.length === 0 && !addingIntel && (
+          <div style={{ textAlign: 'center', padding: '60px 20px', color: '#999' }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>🎯</div>
+            <div style={{ fontSize: 16, fontFamily: "'Instrument Serif', Georgia, serif" }}>No competitor intel yet</div>
+            <div style={{ fontSize: 13, marginTop: 6 }}>Click "+ Add Intel" to start collecting competitive intelligence</div>
+          </div>
+        )}
+
+        {sortedKeys.map(comp => (
+          <div key={comp} style={{ marginBottom: 24 }}>
+            <div style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 16, color: '#1a1a1a', borderBottom: '1px solid #e0e0e0', paddingBottom: 8, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+              {comp}
+              <span style={{ fontSize: 11, color: '#888', fontFamily: 'inherit', fontWeight: 400 }}>({grouped[comp].length})</span>
+            </div>
+            {grouped[comp].map(e => (
+              <div key={e.id} style={{ padding: '12px 14px', marginBottom: 8, background: 'rgba(139,105,20,0.03)', borderLeft: '3px solid #8b691444', borderRadius: 4 }}>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start', marginBottom: 6, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", color: '#8b6914', background: '#f5f0e8', padding: '2px 6px', borderRadius: 3, whiteSpace: 'nowrap' }}>I-{String(e.num || 0).padStart(3, '0')}</span>
+                  <span style={{ fontSize: 10, background: '#fce4ec', color: '#c62828', padding: '2px 6px', borderRadius: 3 }}>{e.competitor}</span>
+                  <span style={{ fontSize: 10, background: '#e8f5e9', color: '#2e7d32', padding: '2px 6px', borderRadius: 3 }}>{e.feature}</span>
+                  <span style={{ flex: 1 }} />
+                  <span style={{ fontSize: 11, fontWeight: 600, color: '#4a7cc9' }}>{e.author}</span>
+                  <span style={{ fontSize: 10, color: '#999' }}>{new Date(e.time).toLocaleDateString()}</span>
+                  <button onClick={() => deleteIntel(e.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#999', fontSize: 10, padding: '0 2px' }}>✕</button>
+                </div>
+                {e.title && <div style={{ fontWeight: 600, fontSize: 13, color: '#1a1a1a', marginBottom: 4 }}>{e.title}</div>}
+                {e.text && <div className="comment-html" style={{ fontSize: 13, color: '#444', marginBottom: 6 }} dangerouslySetInnerHTML={{ __html: e.text }} />}
+                {e.links?.length > 0 && (
+                  <div style={{ marginBottom: 6 }}>
+                    {e.links.map((l, i) => {
+                      const embed = getVideoEmbed(l);
+                      return embed ? (
+                        <div key={i} style={{ marginBottom: 6 }}>
+                          <a href={l} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: '#4a7cc9', display: 'block', marginBottom: 4 }}>🔗 {l}</a>
+                          <iframe src={embed} width="400" height="225" frameBorder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen style={{ borderRadius: 4, maxWidth: '100%', border: '1px solid #e0e0e0' }} />
+                        </div>
+                      ) : (
+                        <a key={i} href={l} target="_blank" rel="noopener noreferrer" style={{ display: 'block', fontSize: 12, color: '#4a7cc9', marginBottom: 2 }}>🔗 {l}</a>
+                      );
+                    })}
+                  </div>
+                )}
+                {e.images?.length > 0 && (
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
+                    {e.images.map((src, i) => <img key={i} src={src} alt="screenshot" onClick={() => setModalImage(src)} style={{ maxWidth: 300, maxHeight: 180, borderRadius: 4, border: '1px solid #e0e0e0', cursor: 'pointer' }} />)}
+                  </div>
+                )}
+                {e.audio && <audio controls src={e.audio} style={{ height: 28, marginBottom: 6, maxWidth: '100%', display: 'block' }} />}
+                {e.video && <video controls src={e.video} style={{ maxWidth: 400, maxHeight: 225, borderRadius: 4, marginBottom: 6, display: 'block' }} />}
+                {e.files?.length > 0 && (
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {e.files.map((d, i) => <a key={i} href={d.data} download={d.name} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', background: '#f5f0e8', borderRadius: 4, fontSize: 11, color: '#8b6914', textDecoration: 'none', border: '1px solid #e0d8c8' }}>📄 {d.name}</a>)}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   if (!loaded) return <div style={{ background: '#fff', color: '#888', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Georgia, serif', fontSize: 18 }}>Loading Coryphaeus Spec…</div>;
 
   return (
@@ -900,14 +1202,18 @@ export default function App() {
             </label>
           </div>
           <div style={{ flex: 1, overflowY: 'auto', padding: '6px 0' }}>
-            <button className={`sidebar-btn ${showSummary ? 'active' : ''}`} onClick={() => setShowSummary(true)} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
+            <button className={`sidebar-btn ${showSummary && !showCompetitors ? 'active' : ''}`} onClick={() => { setShowCompetitors(false); setShowSummary(true); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
               <span style={{ flex: 1 }}>💬 Comments Summary</span>
               {totalComments > 0 && <span style={{ fontSize: 10, background: '#e8f0fc', color: '#4a7cc9', padding: '1px 5px', borderRadius: 3 }}>{totalComments}</span>}
+            </button>
+            <button className={`sidebar-btn ${showCompetitors ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowCompetitors(true); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
+              <span style={{ flex: 1 }}>🎯 Competitors</span>
+              {competitorData.length > 0 && <span style={{ fontSize: 10, background: '#fce4ec', color: '#c62828', padding: '1px 5px', borderRadius: 3 }}>{competitorData.length}</span>}
             </button>
             {filteredSections.map(([s, realIdx]) => {
               const cmtCount = sectionCommentCount(realIdx);
               return (
-                <button key={s[0]} className={`sidebar-btn ${realIdx === activeSection && !showSummary ? 'active' : ''}`} onClick={() => { setShowSummary(false); setActiveSection(realIdx); }}>
+                <button key={s[0]} className={`sidebar-btn ${realIdx === activeSection && !showSummary && !showCompetitors ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowCompetitors(false); setActiveSection(realIdx); }}>
                   <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s[1]}</span>
                   <span style={{ display: 'flex', gap: 4 }}>
                     {s[2] > 0 && showChanges && <span style={{ fontSize: 10, background: '#f5e6c8', color: '#8b6914', padding: '1px 5px', borderRadius: 3, fontFamily: 'monospace' }}>{s[2]}</span>}
@@ -924,14 +1230,17 @@ export default function App() {
         <div style={{ padding: '10px 20px', borderBottom: '1px solid #e0e0e0', display: 'flex', alignItems: 'center', gap: 12, background: '#f8f8f6', minHeight: 44 }}>
           {!sidebarOpen && <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 16 }}>▶</button>}
           <div style={{ flex: 1 }}>
-            <span style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 18, color: '#1a1a1a' }}>{showSummary ? 'Comments Summary' : section[1]}</span>
-            <span style={{ fontSize: 11, color: '#999', marginLeft: 10 }}>{showSummary ? 'All sections' : `${section[0]}.md`}</span>
+            <span style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 18, color: '#1a1a1a' }}>{showCompetitors ? '🎯 Competitors Intel' : showSummary ? 'Comments Summary' : section[1]}</span>
+            <span style={{ fontSize: 11, color: '#999', marginLeft: 10 }}>{showCompetitors ? 'All competitors' : showSummary ? 'All sections' : `${section[0]}.md`}</span>
           </div>
-          {!showSummary && <span style={{ fontSize: 11, color: '#999' }}>{section[3].length} items</span>}
-          {!showSummary && section[2] > 0 && showChanges && <span className="badge-v31">{section[2]} v3.1</span>}
+          {showCompetitors && <span style={{ fontSize: 11, color: '#999' }}>{competitorData.length} entries</span>}
+          {!showSummary && !showCompetitors && <span style={{ fontSize: 11, color: '#999' }}>{section[3].length} items</span>}
+          {!showSummary && !showCompetitors && section[2] > 0 && showChanges && <span className="badge-v31">{section[2]} v3.1</span>}
         </div>
         <div ref={contentRef} style={{ flex: 1, overflowY: 'auto', padding: '16px 24px 80px' }}>
-          {showSummary ? (
+          {showCompetitors ? (
+            <div style={{ animation: 'fadeIn 0.2s ease' }}>{renderCompetitorsView()}</div>
+          ) : showSummary ? (
             <div style={{ animation: 'fadeIn 0.2s ease' }}>{renderSummaryView()}</div>
           ) : (
             <div style={{ maxWidth: 800, margin: '0 auto', animation: 'fadeIn 0.2s ease' }}>
@@ -940,7 +1249,16 @@ export default function App() {
           )}
         </div>
         <div style={{ padding: '8px 20px', borderTop: '1px solid #e0e0e0', background: '#f8f8f6', display: 'flex', alignItems: 'center', gap: 16, fontSize: 11, color: '#888' }}>
-          {showSummary ? (
+          {showCompetitors ? (
+            <>
+              <span style={{ color: '#c62828' }}>🎯 {competitorData.length} intel entries</span>
+              <span>•</span>
+              <span>{new Set(competitorData.map(e => e.competitor)).size} competitors tracked</span>
+              <span>•</span>
+              <span>v3.1 — Feb 2026</span>
+              {saving && <span style={{ color: '#4caf50' }}>● Saving…</span>}
+            </>
+          ) : showSummary ? (
             <>
               <span style={{ color: '#4a7cc9' }}>💬 {totalComments} comments across {Object.keys(Object.entries(comments).reduce((acc, [k, v]) => { if (v.length > 0) { const sec = k.split('-')[0]; acc[sec] = true; } return acc; }, {})).length} sections</span>
               <span>•</span>

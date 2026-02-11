@@ -363,6 +363,7 @@ export default function App() {
   const [loaded, setLoaded] = useState(false);
   const [filterV31, setFilterV31] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [showSummary, setShowSummary] = useState(false);
   const contentRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -414,8 +415,8 @@ export default function App() {
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e) => {
-      if (e.key === 'ArrowRight' && !commentingOn) setActiveSection(s => Math.min(S.length - 1, s + 1));
-      if (e.key === 'ArrowLeft' && !commentingOn) setActiveSection(s => Math.max(0, s - 1));
+      if (e.key === 'ArrowRight' && !commentingOn) { setShowSummary(false); setActiveSection(s => Math.min(S.length - 1, s + 1)); }
+      if (e.key === 'ArrowLeft' && !commentingOn) { setShowSummary(false); setActiveSection(s => Math.max(0, s - 1)); }
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); document.querySelector('#search-input')?.focus(); }
     };
     window.addEventListener('keydown', handler);
@@ -509,6 +510,67 @@ export default function App() {
     );
   };
 
+  const renderSummaryView = () => {
+    // Collect all comments enriched with section/item context
+    const allComments = [];
+    S.forEach((sec, secIdx) => {
+      sec[3].forEach(item => {
+        const [itemIdx, , text] = item;
+        const key = commentKey(secIdx, itemIdx);
+        const itemComments = comments[key] || [];
+        itemComments.forEach(c => {
+          allComments.push({ ...c, secIdx, itemIdx, sectionName: sec[1], itemText: text });
+        });
+      });
+    });
+
+    if (allComments.length === 0) {
+      return (
+        <div style={{ textAlign: 'center', padding: '60px 20px', color: '#999' }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>💬</div>
+          <div style={{ fontSize: 16, fontFamily: "'Instrument Serif', Georgia, serif" }}>No comments yet</div>
+          <div style={{ fontSize: 13, marginTop: 6 }}>Click on any spec item to add feedback</div>
+        </div>
+      );
+    }
+
+    // Group by section in document order
+    const grouped = {};
+    S.forEach((sec, secIdx) => {
+      const sectionComments = allComments.filter(c => c.secIdx === secIdx);
+      if (sectionComments.length > 0) {
+        grouped[secIdx] = sectionComments.sort((a, b) => new Date(b.time) - new Date(a.time));
+      }
+    });
+
+    return (
+      <div style={{ maxWidth: 800, margin: '0 auto' }}>
+        {Object.entries(grouped).map(([secIdx, cmts]) => (
+          <div key={secIdx} style={{ marginBottom: 24 }}>
+            <button onClick={() => { setShowSummary(false); setActiveSection(Number(secIdx)); }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0', fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 16, color: '#4a7cc9', textAlign: 'left', width: '100%', borderBottom: '1px solid #e0e0e0', paddingBottom: 8, marginBottom: 10 }}>
+              {cmts[0].sectionName} →
+            </button>
+            {cmts.map(c => (
+              <div key={c.id} style={{ padding: '10px 14px', marginBottom: 6, background: 'rgba(100,149,237,0.05)', borderLeft: '3px solid #6495ed66', borderRadius: 4 }}>
+                <div style={{ fontSize: 12, fontStyle: 'italic', color: '#888', marginBottom: 6 }}>
+                  {c.itemText.length > 150 ? c.itemText.slice(0, 150) + '…' : c.itemText}
+                </div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                  <span style={{ fontWeight: 600, color: '#4a7cc9', fontSize: 13, whiteSpace: 'nowrap' }}>{c.author}</span>
+                  <span style={{ flex: 1, color: '#333', fontSize: 13 }}>{c.text}</span>
+                  <span style={{ fontSize: 10, color: '#999', whiteSpace: 'nowrap' }}>{new Date(c.time).toLocaleDateString()}</span>
+                  <button onClick={(e) => { e.stopPropagation(); deleteComment(c.secIdx, c.itemIdx, c.id); }}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#999', fontSize: 10, padding: '0 2px' }}>✕</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   if (!loaded) return <div style={{ background: '#fff', color: '#888', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Georgia, serif', fontSize: 18 }}>Loading Coryphaeus Spec…</div>;
 
   return (
@@ -540,12 +602,15 @@ export default function App() {
             <span style={{ color: '#8b6914' }}>97 v3.1 changes</span>
             {saving && <span style={{ color: '#4caf50' }}>saving…</span>}
           </div>
-          <div style={{ padding: '8px 16px', borderBottom: '1px solid #e0e0e0', display: 'flex', gap: 8 }}>
-            <button onClick={() => setFilterV31(!filterV31)} style={{ padding: '4px 10px', fontSize: 11, background: filterV31 ? '#f5e6c8' : 'transparent', color: filterV31 ? '#8b6914' : '#888', border: `1px solid ${filterV31 ? '#d4a85366' : '#d0d0d0'}`, borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit' }}>
-              {filterV31 ? '⚡ v3.1 Only' : 'v3.1 Filter'}
+          <div style={{ padding: '8px 16px', borderBottom: '1px solid #e0e0e0', display: 'flex', gap: 6 }}>
+            <button onClick={() => setFilterV31(!filterV31)} style={{ padding: '4px 8px', fontSize: 11, background: filterV31 ? '#f5e6c8' : 'transparent', color: filterV31 ? '#8b6914' : '#888', border: `1px solid ${filterV31 ? '#d4a85366' : '#d0d0d0'}`, borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit' }}>
+              {filterV31 ? '⚡ v3.1' : 'v3.1'}
             </button>
-            <button onClick={() => setShowVersions(!showVersions)} style={{ padding: '4px 10px', fontSize: 11, background: showVersions ? '#e8f0fc' : 'transparent', color: showVersions ? '#4a7cc9' : '#888', border: `1px solid ${showVersions ? '#4a7cc944' : '#d0d0d0'}`, borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit' }}>
-              📋 Versions
+            <button onClick={() => setShowVersions(!showVersions)} style={{ padding: '4px 8px', fontSize: 11, background: showVersions ? '#e8f0fc' : 'transparent', color: showVersions ? '#4a7cc9' : '#888', border: `1px solid ${showVersions ? '#4a7cc944' : '#d0d0d0'}`, borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit' }}>
+              Versions
+            </button>
+            <button onClick={() => setShowSummary(!showSummary)} style={{ padding: '4px 8px', fontSize: 11, background: showSummary ? '#e8f0fc' : 'transparent', color: showSummary ? '#4a7cc9' : '#888', border: `1px solid ${showSummary ? '#4a7cc944' : '#d0d0d0'}`, borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit' }}>
+              💬 Summary
             </button>
           </div>
           {showVersions && (
@@ -566,7 +631,7 @@ export default function App() {
             {filteredSections.map(([s, realIdx]) => {
               const cmtCount = sectionCommentCount(realIdx);
               return (
-                <button key={s[0]} className={`sidebar-btn ${realIdx === activeSection ? 'active' : ''}`} onClick={() => setActiveSection(realIdx)}>
+                <button key={s[0]} className={`sidebar-btn ${realIdx === activeSection && !showSummary ? 'active' : ''}`} onClick={() => { setShowSummary(false); setActiveSection(realIdx); }}>
                   <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s[1]}</span>
                   <span style={{ display: 'flex', gap: 4 }}>
                     {s[2] > 0 && <span style={{ fontSize: 10, background: '#f5e6c8', color: '#8b6914', padding: '1px 5px', borderRadius: 3, fontFamily: 'monospace' }}>{s[2]}</span>}
@@ -583,27 +648,42 @@ export default function App() {
         <div style={{ padding: '10px 20px', borderBottom: '1px solid #e0e0e0', display: 'flex', alignItems: 'center', gap: 12, background: '#f8f8f6', minHeight: 44 }}>
           {!sidebarOpen && <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 16 }}>▶</button>}
           <div style={{ flex: 1 }}>
-            <span style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 18, color: '#1a1a1a' }}>{section[1]}</span>
-            <span style={{ fontSize: 11, color: '#999', marginLeft: 10 }}>{section[0]}.md</span>
+            <span style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 18, color: '#1a1a1a' }}>{showSummary ? 'Comments Summary' : section[1]}</span>
+            <span style={{ fontSize: 11, color: '#999', marginLeft: 10 }}>{showSummary ? 'All sections' : `${section[0]}.md`}</span>
           </div>
-          <span style={{ fontSize: 11, color: '#999' }}>{section[3].length} items</span>
-          {section[2] > 0 && <span className="badge-v31">{section[2]} v3.1</span>}
+          {!showSummary && <span style={{ fontSize: 11, color: '#999' }}>{section[3].length} items</span>}
+          {!showSummary && section[2] > 0 && <span className="badge-v31">{section[2]} v3.1</span>}
         </div>
         <div ref={contentRef} style={{ flex: 1, overflowY: 'auto', padding: '16px 24px 80px' }}>
-          <div style={{ maxWidth: 800, margin: '0 auto', animation: 'fadeIn 0.2s ease' }}>
-            {section[3].map(item => renderItem(item))}
-          </div>
+          {showSummary ? (
+            <div style={{ animation: 'fadeIn 0.2s ease' }}>{renderSummaryView()}</div>
+          ) : (
+            <div style={{ maxWidth: 800, margin: '0 auto', animation: 'fadeIn 0.2s ease' }}>
+              {section[3].map(item => renderItem(item))}
+            </div>
+          )}
         </div>
         <div style={{ padding: '8px 20px', borderTop: '1px solid #e0e0e0', background: '#f8f8f6', display: 'flex', alignItems: 'center', gap: 16, fontSize: 11, color: '#888' }}>
-          <span>Section {activeSection + 1}/{S.length}</span>
-          <span>•</span>
-          <span style={{ color: '#4a7cc9' }}>💬 {totalComments} comments</span>
-          <span>•</span>
-          <span>v3.1 — Feb 2026</span>
-          {saving && <span style={{ color: '#4caf50' }}>● Saving…</span>}
-          <div style={{ flex: 1 }} />
-          <button onClick={() => setActiveSection(Math.max(0, activeSection - 1))} disabled={activeSection === 0} style={{ padding: '4px 12px', background: '#fff', color: activeSection === 0 ? '#ccc' : '#555', border: '1px solid #d0d0d0', borderRadius: 4, cursor: activeSection === 0 ? 'default' : 'pointer', fontSize: 11, fontFamily: 'inherit' }}>← Prev</button>
-          <button onClick={() => setActiveSection(Math.min(S.length - 1, activeSection + 1))} disabled={activeSection === S.length - 1} style={{ padding: '4px 12px', background: '#fff', color: activeSection === S.length - 1 ? '#ccc' : '#555', border: '1px solid #d0d0d0', borderRadius: 4, cursor: activeSection === S.length - 1 ? 'default' : 'pointer', fontSize: 11, fontFamily: 'inherit' }}>Next →</button>
+          {showSummary ? (
+            <>
+              <span style={{ color: '#4a7cc9' }}>💬 {totalComments} comments across {Object.keys(Object.entries(comments).reduce((acc, [k, v]) => { if (v.length > 0) { const sec = k.split('-')[0]; acc[sec] = true; } return acc; }, {})).length} sections</span>
+              <span>•</span>
+              <span>v3.1 — Feb 2026</span>
+              {saving && <span style={{ color: '#4caf50' }}>● Saving…</span>}
+            </>
+          ) : (
+            <>
+              <span>Section {activeSection + 1}/{S.length}</span>
+              <span>•</span>
+              <span style={{ color: '#4a7cc9' }}>💬 {totalComments} comments</span>
+              <span>•</span>
+              <span>v3.1 — Feb 2026</span>
+              {saving && <span style={{ color: '#4caf50' }}>● Saving…</span>}
+              <div style={{ flex: 1 }} />
+              <button onClick={() => setActiveSection(Math.max(0, activeSection - 1))} disabled={activeSection === 0} style={{ padding: '4px 12px', background: '#fff', color: activeSection === 0 ? '#ccc' : '#555', border: '1px solid #d0d0d0', borderRadius: 4, cursor: activeSection === 0 ? 'default' : 'pointer', fontSize: 11, fontFamily: 'inherit' }}>← Prev</button>
+              <button onClick={() => setActiveSection(Math.min(S.length - 1, activeSection + 1))} disabled={activeSection === S.length - 1} style={{ padding: '4px 12px', background: '#fff', color: activeSection === S.length - 1 ? '#ccc' : '#555', border: '1px solid #d0d0d0', borderRadius: 4, cursor: activeSection === S.length - 1 ? 'default' : 'pointer', fontSize: 11, fontFamily: 'inherit' }}>Next →</button>
+            </>
+          )}
         </div>
       </div>
     </div>

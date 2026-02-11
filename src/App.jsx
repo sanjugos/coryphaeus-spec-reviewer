@@ -395,6 +395,8 @@ export default function App() {
   const [compVideo, setCompVideo] = useState(null);
   const [editingIntelId, setEditingIntelId] = useState(null);
   const [mediaModal, setMediaModal] = useState(null); // { items: [{type,src,name}], index: 0 }
+  const [modalRect, setModalRect] = useState({ x: 80, y: 40, w: 0, h: 0 }); // 0 = auto
+  const dragRef = useRef(null); // { startX, startY, startRectX, startRectY, type: 'move'|'resize-*' }
   const contentRef = useRef(null);
   const inputRef = useRef(null);
   const editorRef = useRef(null);
@@ -743,6 +745,38 @@ export default function App() {
   useEffect(() => {
     if (commentingOn && inputRef.current) inputRef.current.focus();
   }, [commentingOn]);
+
+  // Reset modal position/size when opened
+  useEffect(() => {
+    if (mediaModal) setModalRect({ x: 80, y: 40, w: 0, h: 0 });
+  }, [mediaModal?.items]);
+
+  // Drag/resize handler for media modal
+  useEffect(() => {
+    const onMove = (e) => {
+      const d = dragRef.current;
+      if (!d) return;
+      e.preventDefault();
+      const dx = e.clientX - d.startX;
+      const dy = e.clientY - d.startY;
+      if (d.type === 'move') {
+        setModalRect(r => ({ ...r, x: d.startRectX + dx, y: Math.max(0, d.startRectY + dy) }));
+      } else {
+        setModalRect(r => {
+          let { x, y, w, h } = { ...r };
+          if (d.type.includes('right')) w = Math.max(320, d.startW + dx);
+          if (d.type.includes('bottom')) h = Math.max(240, d.startH + dy);
+          if (d.type.includes('left')) { const nw = Math.max(320, d.startW - dx); x = d.startRectX + d.startW - nw; w = nw; }
+          if (d.type.includes('top')) { const nh = Math.max(240, d.startH - dy); y = Math.max(0, d.startRectY + d.startH - nh); h = nh; }
+          return { x, y, w, h };
+        });
+      }
+    };
+    const onUp = () => { dragRef.current = null; document.body.style.cursor = ''; document.body.style.userSelect = ''; };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+  }, []);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -1372,42 +1406,66 @@ export default function App() {
         const item = items[index];
         const hasPrev = index > 0;
         const hasNext = index < items.length - 1;
-        const navBtn = (dir, onClick, disabled) => (
-          <button onClick={e => { e.stopPropagation(); onClick(); }} disabled={disabled}
-            style={{ position: 'absolute', top: '50%', [dir === 'prev' ? 'left' : 'right']: 16, transform: 'translateY(-50%)', background: disabled ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.15)', border: 'none', color: disabled ? '#555' : '#fff', fontSize: 28, width: 48, height: 48, borderRadius: '50%', cursor: disabled ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.15s' }}>
-            {dir === 'prev' ? '‹' : '›'}
-          </button>
-        );
+        const startDrag = (type) => (e) => {
+          e.preventDefault(); e.stopPropagation();
+          const el = e.target.closest('[data-modal-window]');
+          const rect = el ? el.getBoundingClientRect() : { left: modalRect.x, top: modalRect.y, width: modalRect.w || 700, height: modalRect.h || 500 };
+          dragRef.current = { startX: e.clientX, startY: e.clientY, startRectX: modalRect.x, startRectY: modalRect.y, startW: rect.width, startH: rect.height, type };
+          document.body.style.cursor = type === 'move' ? 'grabbing' : type.replace('resize-', '') + '-resize';
+          document.body.style.userSelect = 'none';
+        };
+        const edgeW = 6;
+        const resizeHandle = (pos) => {
+          const cursorMap = { top: 'n-resize', bottom: 's-resize', left: 'w-resize', right: 'e-resize', 'top-left': 'nw-resize', 'top-right': 'ne-resize', 'bottom-left': 'sw-resize', 'bottom-right': 'se-resize' };
+          const styles = { position: 'absolute', zIndex: 2 };
+          if (pos === 'top') Object.assign(styles, { top: -edgeW/2, left: edgeW, right: edgeW, height: edgeW, cursor: cursorMap[pos] });
+          else if (pos === 'bottom') Object.assign(styles, { bottom: -edgeW/2, left: edgeW, right: edgeW, height: edgeW, cursor: cursorMap[pos] });
+          else if (pos === 'left') Object.assign(styles, { left: -edgeW/2, top: edgeW, bottom: edgeW, width: edgeW, cursor: cursorMap[pos] });
+          else if (pos === 'right') Object.assign(styles, { right: -edgeW/2, top: edgeW, bottom: edgeW, width: edgeW, cursor: cursorMap[pos] });
+          else if (pos === 'top-left') Object.assign(styles, { top: -edgeW/2, left: -edgeW/2, width: edgeW*2, height: edgeW*2, cursor: cursorMap[pos] });
+          else if (pos === 'top-right') Object.assign(styles, { top: -edgeW/2, right: -edgeW/2, width: edgeW*2, height: edgeW*2, cursor: cursorMap[pos] });
+          else if (pos === 'bottom-left') Object.assign(styles, { bottom: -edgeW/2, left: -edgeW/2, width: edgeW*2, height: edgeW*2, cursor: cursorMap[pos] });
+          else if (pos === 'bottom-right') Object.assign(styles, { bottom: -edgeW/2, right: -edgeW/2, width: edgeW*2, height: edgeW*2, cursor: cursorMap[pos] });
+          return <div key={pos} onMouseDown={startDrag('resize-' + pos)} style={styles} />;
+        };
         return (
-          <div onClick={() => setMediaModal(null)} onKeyDown={e => {
-            if (e.key === 'ArrowLeft' && hasPrev) setMediaModal(m => ({ ...m, index: m.index - 1 }));
-            if (e.key === 'ArrowRight' && hasNext) setMediaModal(m => ({ ...m, index: m.index + 1 }));
-            if (e.key === 'Escape') setMediaModal(null);
-          }} tabIndex={0} ref={el => el?.focus()}
-            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 1001, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', outline: 'none' }}>
-            <div style={{ position: 'absolute', top: 20, left: 0, right: 0, display: 'flex', justifyContent: 'center', gap: 8, alignItems: 'center' }}>
-              <span style={{ color: '#fff', fontSize: 13, background: 'rgba(0,0,0,0.5)', padding: '4px 12px', borderRadius: 12 }}>{item.name}</span>
-              <span style={{ color: '#aaa', fontSize: 12 }}>{index + 1} / {items.length}</span>
-            </div>
-            <div onClick={e => e.stopPropagation()} style={{ maxWidth: '85vw', maxHeight: '80vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              {item.type === 'image' && <img src={item.src} alt={item.name} style={{ maxWidth: '85vw', maxHeight: '80vh', borderRadius: 8, boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }} />}
-              {item.type === 'video' && <video controls autoPlay src={item.src} style={{ maxWidth: '85vw', maxHeight: '80vh', borderRadius: 8 }} />}
-              {item.type === 'file' && (
-                <div style={{ background: '#fff', borderRadius: 12, padding: '40px 60px', textAlign: 'center', maxWidth: 500 }}>
-                  <div style={{ fontSize: 48, marginBottom: 16 }}>📄</div>
-                  <div style={{ fontSize: 16, fontWeight: 600, color: '#1a1a1a', marginBottom: 8 }}>{item.name}</div>
-                  {item.src && item.src.startsWith('data:application/pdf') ? (
-                    <iframe src={item.src} style={{ width: '70vw', height: '70vh', border: '1px solid #e0e0e0', borderRadius: 8, marginTop: 12 }} />
+          <>
+            <div onClick={() => setMediaModal(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1001 }} />
+            <div data-modal-window="" onKeyDown={e => {
+              if (e.key === 'ArrowLeft' && hasPrev) { e.stopPropagation(); setMediaModal(m => ({ ...m, index: m.index - 1 })); }
+              if (e.key === 'ArrowRight' && hasNext) { e.stopPropagation(); setMediaModal(m => ({ ...m, index: m.index + 1 })); }
+              if (e.key === 'Escape') setMediaModal(null);
+            }} tabIndex={0} ref={el => el?.focus()}
+              style={{ position: 'fixed', left: modalRect.x, top: modalRect.y, width: modalRect.w || 'calc(100vw - 160px)', height: modalRect.h || 'calc(100vh - 80px)', maxWidth: 'calc(100vw - 40px)', maxHeight: 'calc(100vh - 20px)', zIndex: 1002, background: '#1a1a1a', borderRadius: 10, boxShadow: '0 12px 48px rgba(0,0,0,0.5)', display: 'flex', flexDirection: 'column', outline: 'none', overflow: 'hidden' }}>
+              {['top','bottom','left','right','top-left','top-right','bottom-left','bottom-right'].map(resizeHandle)}
+              <div onMouseDown={startDrag('move')}
+                style={{ display: 'flex', alignItems: 'center', padding: '8px 12px', background: '#222', borderRadius: '10px 10px 0 0', cursor: 'grab', gap: 8, flexShrink: 0, userSelect: 'none' }}>
+                <button onClick={() => hasPrev && setMediaModal(m => ({ ...m, index: m.index - 1 }))} disabled={!hasPrev}
+                  style={{ background: 'none', border: 'none', color: hasPrev ? '#fff' : '#555', fontSize: 16, cursor: hasPrev ? 'pointer' : 'default', padding: '0 4px' }}>‹</button>
+                <button onClick={() => hasNext && setMediaModal(m => ({ ...m, index: m.index + 1 }))} disabled={!hasNext}
+                  style={{ background: 'none', border: 'none', color: hasNext ? '#fff' : '#555', fontSize: 16, cursor: hasNext ? 'pointer' : 'default', padding: '0 4px' }}>›</button>
+                <span style={{ color: '#aaa', fontSize: 11 }}>{index + 1} / {items.length}</span>
+                <span style={{ flex: 1, color: '#ddd', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'center' }}>{item.name}</span>
+                {item.type === 'file' && <a href={item.src} download={item.name} onClick={e => e.stopPropagation()} style={{ color: '#8b6914', fontSize: 11, textDecoration: 'none', padding: '2px 8px', background: 'rgba(139,105,20,0.2)', borderRadius: 4 }}>Download</a>}
+                <button onClick={() => setMediaModal(null)} style={{ background: 'none', border: 'none', color: '#999', fontSize: 16, cursor: 'pointer', padding: '0 4px', marginLeft: 4 }}>✕</button>
+              </div>
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'auto', padding: 8 }}>
+                {item.type === 'image' && <img src={item.src} alt={item.name} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: 4 }} />}
+                {item.type === 'video' && <video controls autoPlay src={item.src} style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: 4 }} />}
+                {item.type === 'file' && (
+                  item.src && item.src.startsWith('data:application/pdf') ? (
+                    <iframe src={item.src} style={{ width: '100%', height: '100%', border: 'none', borderRadius: 4, background: '#fff' }} />
                   ) : (
-                    <a href={item.src} download={item.name} style={{ display: 'inline-block', marginTop: 12, padding: '10px 24px', background: '#8b6914', color: '#fff', borderRadius: 6, fontSize: 13, fontWeight: 600, textDecoration: 'none' }}>Download File</a>
-                  )}
-                </div>
-              )}
+                    <div style={{ textAlign: 'center', color: '#aaa' }}>
+                      <div style={{ fontSize: 64, marginBottom: 16 }}>📄</div>
+                      <div style={{ fontSize: 16, fontWeight: 600, color: '#ddd', marginBottom: 8 }}>{item.name}</div>
+                      <a href={item.src} download={item.name} style={{ display: 'inline-block', marginTop: 8, padding: '10px 24px', background: '#8b6914', color: '#fff', borderRadius: 6, fontSize: 13, fontWeight: 600, textDecoration: 'none' }}>Download File</a>
+                    </div>
+                  )
+                )}
+              </div>
             </div>
-            {navBtn('prev', () => setMediaModal(m => ({ ...m, index: m.index - 1 })), !hasPrev)}
-            {navBtn('next', () => setMediaModal(m => ({ ...m, index: m.index + 1 })), !hasNext)}
-            <button onClick={() => setMediaModal(null)} style={{ position: 'absolute', top: 20, right: 20, background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', fontSize: 24, width: 40, height: 40, borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
-          </div>
+          </>
         );
       })()}
     </div>

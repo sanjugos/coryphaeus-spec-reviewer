@@ -354,6 +354,8 @@ export default function App() {
   const [audioData, setAudioData] = useState(null);
   const [imageData, setImageData] = useState(null);
   const [recordingTime, setRecordingTime] = useState(0);
+  const [modalImage, setModalImage] = useState(null);
+  const [transcript, setTranscript] = useState('');
   const contentRef = useRef(null);
   const inputRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -364,6 +366,7 @@ export default function App() {
   const animFrameRef = useRef(null);
   const audioCtxRef = useRef(null);
   const timerRef = useRef(null);
+  const recognitionRef = useRef(null);
 
   useEffect(() => {
     apiGet().then(c => { setComments(c); setLoaded(true); });
@@ -395,6 +398,7 @@ export default function App() {
     setCommentText("");
     setAudioData(null);
     setImageData(null);
+    setTranscript('');
     setCommentingOn(null);
     setSaving(true);
     await apiSave(newComments);
@@ -435,6 +439,7 @@ export default function App() {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mr = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4' });
       audioChunksRef.current = [];
+      setTranscript('');
       mr.ondataavailable = e => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
       mr.onstop = () => {
         const blob = new Blob(audioChunksRef.current, { type: mr.mimeType });
@@ -457,10 +462,27 @@ export default function App() {
       analyserRef.current = analyser;
       mediaRecorderRef.current = mr;
       mr.start();
+      // Start speech recognition in parallel
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (SR) {
+        const rec = new SR();
+        rec.continuous = true;
+        rec.interimResults = false;
+        rec.lang = 'en-US';
+        let fullText = '';
+        rec.onresult = (e) => {
+          for (let i = e.resultIndex; i < e.results.length; i++) {
+            if (e.results[i].isFinal) fullText += e.results[i][0].transcript + ' ';
+          }
+          setTranscript(fullText.trim());
+        };
+        rec.onerror = () => {};
+        rec.start();
+        recognitionRef.current = rec;
+      }
       setRecordingTime(0);
       timerRef.current = setInterval(() => setRecordingTime(t => t + 1), 1000);
       setIsRecording(true);
-      // Start drawing after canvas mounts (next frame)
       requestAnimationFrame(() => drawWaveform());
     } catch { /* mic permission denied */ }
   }, [drawWaveform]);
@@ -468,6 +490,7 @@ export default function App() {
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
+      if (recognitionRef.current) { try { recognitionRef.current.stop(); } catch {} recognitionRef.current = null; }
       setIsRecording(false);
       setRecordingTime(0);
     }
@@ -609,7 +632,7 @@ export default function App() {
                   <button onClick={() => deleteComment(activeSection, itemIdx, c.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#999', fontSize: 10 }}>✕</button>
                 </div>
                 {c.audio && <audio controls src={c.audio} style={{ height: 28, marginTop: 4, maxWidth: '100%' }} />}
-                {c.image && <img src={c.image} alt="screenshot" onClick={() => window.open(c.image)} style={{ maxWidth: 200, maxHeight: 120, marginTop: 4, borderRadius: 4, border: '1px solid #e0e0e0', cursor: 'pointer' }} />}
+                {c.image && <img src={c.image} alt="screenshot" onClick={() => setModalImage(c.image)} style={{ maxWidth: 200, maxHeight: 120, marginTop: 4, borderRadius: 4, border: '1px solid #e0e0e0', cursor: 'pointer' }} />}
               </div>
             ))}
           </div>
@@ -622,7 +645,7 @@ export default function App() {
             <button onClick={() => fileInputRef.current?.click()} title="Attach screenshot" style={{ padding: '6px 8px', background: 'transparent', color: '#888', border: '1px solid #d0d0d0', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>📎</button>
             <input ref={fileInputRef} type="file" accept="image/*" onChange={handleImageUpload} style={{ display: 'none' }} />
             <button onClick={addComment} style={{ padding: '6px 14px', background: '#8b6914', color: '#fff', border: 'none', borderRadius: 4, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Add</button>
-            <button onClick={() => { setCommentingOn(null); setAudioData(null); setImageData(null); if (isRecording) stopRecording(); }} style={{ padding: '6px 10px', background: 'none', color: '#888', border: '1px solid #d0d0d0', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+            <button onClick={() => { setCommentingOn(null); setAudioData(null); setImageData(null); setTranscript(''); if (isRecording) stopRecording(); }} style={{ padding: '6px 10px', background: 'none', color: '#888', border: '1px solid #d0d0d0', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>Cancel</button>
             {isRecording && (
               <div style={{ width: '100%', marginTop: 6, display: 'flex', alignItems: 'center', gap: 8, background: '#fef2f2', border: '1px solid #e5393522', borderRadius: 6, padding: '6px 10px' }}>
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#e53935', animation: 'pulse 1s infinite' }} />
@@ -632,7 +655,7 @@ export default function App() {
             )}
             {(audioData || imageData) && (
               <div style={{ width: '100%', marginTop: 4, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                {audioData && <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}><audio controls src={audioData} style={{ height: 28 }} /><button onClick={() => setAudioData(null)} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 10 }}>✕</button></div>}
+                {audioData && <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}><audio controls src={audioData} style={{ height: 28 }} /><button onClick={() => { setCommentText(transcript); }} title="Transcribe audio to text" style={{ padding: '3px 8px', background: transcript ? '#4a7cc9' : '#d0d0d0', color: '#fff', border: 'none', borderRadius: 3, fontSize: 10, fontWeight: 600, cursor: transcript ? 'pointer' : 'default', opacity: transcript ? 1 : 0.5 }}>Transcribe</button><button onClick={() => setAudioData(null)} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 10 }}>✕</button></div>}
                 {imageData && <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}><img src={imageData} alt="preview" style={{ maxWidth: 120, maxHeight: 60, borderRadius: 4, border: '1px solid #e0e0e0' }} /><button onClick={() => setImageData(null)} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 10 }}>✕</button></div>}
               </div>
             )}
@@ -711,7 +734,7 @@ export default function App() {
                     style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#999', fontSize: 10, padding: '0 2px' }}>✕</button>
                 </div>
                 {c.audio && <audio controls src={c.audio} style={{ height: 28, marginTop: 4, maxWidth: '100%' }} />}
-                {c.image && <img src={c.image} alt="screenshot" onClick={() => window.open(c.image)} style={{ maxWidth: 300, maxHeight: 150, marginTop: 4, borderRadius: 4, border: '1px solid #e0e0e0', cursor: 'pointer' }} />}
+                {c.image && <img src={c.image} alt="screenshot" onClick={() => setModalImage(c.image)} style={{ maxWidth: 300, maxHeight: 150, marginTop: 4, borderRadius: 4, border: '1px solid #e0e0e0', cursor: 'pointer' }} />}
               </div>
             ))}
           </div>
@@ -827,6 +850,13 @@ export default function App() {
           )}
         </div>
       </div>
+
+      {modalImage && (
+        <div onClick={() => setModalImage(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <img src={modalImage} alt="Full size" style={{ maxWidth: '90vw', maxHeight: '90vh', borderRadius: 8, boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }} onClick={e => e.stopPropagation()} />
+          <button onClick={() => setModalImage(null)} style={{ position: 'absolute', top: 20, right: 20, background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', fontSize: 24, width: 40, height: 40, borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+        </div>
+      )}
     </div>
   );
 }

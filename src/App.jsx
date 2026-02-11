@@ -418,6 +418,7 @@ export default function App() {
   const [mediaModal, setMediaModal] = useState(null); // { items: [{type,src,name}], index: 0 }
   const [showEntities, setShowEntities] = useState(() => window.location.hash === '#entities');
   const [entitySearch, setEntitySearch] = useState('');
+  const [selectedEntity, setSelectedEntity] = useState(null); // entity tuple or null
   const [modalRect, setModalRect] = useState({ x: 80, y: 40, w: 0, h: 0 }); // 0 = auto
   const dragRef = useRef(null); // { startX, startY, startRectX, startRectY, type: 'move'|'resize-*' }
   const contentRef = useRef(null);
@@ -1296,10 +1297,95 @@ export default function App() {
   };
 
   const renderEntitiesView = () => {
+    const catColors = { 'Core': { bg: '#f5f5f5', color: '#555', badge: '#e0e0e0' }, 'New v3.0': { bg: '#e8f5e9', color: '#2e7d32', badge: '#c8e6c9' }, 'New v3.1': { bg: '#fff3e0', color: '#e65100', badge: '#ffe0b2' }, 'Revised v3.1': { bg: '#e3f2fd', color: '#1565c0', badge: '#bbdefb' } };
+
+    // Extract spec content for an entity
+    const getEntityContent = (sec, startItem) => {
+      const sectionItems = S[sec][3];
+      const startType = sectionItems[startItem]?.[1];
+      if (startType !== 'h') return [sectionItems[startItem]]; // paragraph — just return it
+      // Heading — collect heading + following items until next heading at same or higher level
+      const result = [sectionItems[startItem]];
+      const startText = sectionItems[startItem][2];
+      const startLevel = startText.match(/^\d+\.\d+\.\d+/) ? 3 : startText.match(/^\d+\.\d+/) ? 2 : 1;
+      for (let i = startItem + 1; i < sectionItems.length; i++) {
+        const it = sectionItems[i];
+        if (it[1] === 'h') {
+          const t = it[2];
+          const lvl = t.match(/^\d+\.\d+\.\d+/) ? 3 : t.match(/^\d+\.\d+/) ? 2 : 1;
+          if (lvl <= startLevel) break;
+        }
+        result.push(it);
+      }
+      return result;
+    };
+
+    // Detail view for a selected entity
+    if (selectedEntity) {
+      const [name, sec, item, ver, cat] = selectedEntity;
+      const c = catColors[cat];
+      const content = getEntityContent(sec, item);
+      const sectionName = S[sec][1];
+
+      return (
+        <div style={{ maxWidth: 800, margin: '0 auto' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+            <button onClick={() => setSelectedEntity(null)}
+              style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '6px 12px', background: '#f5f5f5', border: '1px solid #e0e0e0', borderRadius: 5, cursor: 'pointer', fontSize: 12, color: '#555', fontFamily: 'inherit' }}>
+              ← All Entities
+            </button>
+            <span style={{ fontSize: 10, background: c.badge, color: c.color, padding: '2px 8px', borderRadius: 3, fontWeight: 600 }}>{cat}</span>
+            {ver !== '2.0' && <span className="badge-v31" style={{ background: c.badge, color: c.color }}>v{ver}</span>}
+          </div>
+          <div style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 24, color: '#1a1a1a', marginBottom: 6 }}>{name}</div>
+          <div style={{ fontSize: 12, color: '#888', marginBottom: 20 }}>
+            Section: <button onClick={() => navigateToEntity(sec, item)} style={{ background: 'none', border: 'none', color: '#4a7cc9', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, padding: 0, textDecoration: 'underline' }}>{sectionName} →</button>
+          </div>
+          <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 8, padding: '16px 20px' }}>
+            {content.map((it, i) => {
+              const [, type, text, flag] = it;
+              const isV31 = flag === 1;
+              const isInnovation = flag === 2;
+              if (type === 'h') {
+                const level = text.match(/^\d+\.\d+\.\d+/) ? 3 : text.match(/^\d+\.\d+/) ? 2 : 1;
+                const sizes = { 1: 20, 2: 17, 3: 14.5 };
+                return <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, marginTop: i > 0 ? 12 : 0, flexWrap: 'wrap' }}>
+                  <h3 style={{ margin: 0, fontSize: sizes[level], fontFamily: "'Instrument Serif', Georgia, serif", fontWeight: 400, color: '#1a1a1a' }}>{text}</h3>
+                  {isV31 && <span className="badge-v31">v3.1</span>}
+                </div>;
+              }
+              if (type === 'x') {
+                const icon = isInnovation ? '⭐' : '⚡';
+                const bg = isInnovation ? 'rgba(76,175,80,0.08)' : 'rgba(180,130,40,0.08)';
+                const border = isInnovation ? '#4caf5044' : '#b4822844';
+                const color = isInnovation ? '#2e7d32' : '#8b6914';
+                return <div key={i} style={{ background: bg, border: `1px solid ${border}`, borderRadius: 6, padding: '10px 14px', fontSize: 13, lineHeight: 1.55, color, marginBottom: 6 }}>
+                  {icon} {text}{isV31 && <span className="badge-v31" style={{ marginLeft: 8 }}>v3.1</span>}
+                </div>;
+              }
+              if (type === 't') {
+                const rows = text;
+                return <div key={i} style={{ overflowX: 'auto', marginBottom: 8 }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, lineHeight: 1.5 }}>
+                    <thead><tr>{rows[0].map((cell, ci) => <th key={ci} style={{ textAlign: 'left', padding: '8px 12px', background: '#f5f0e8', color: '#1a1a1a', fontWeight: 600, borderBottom: '2px solid #d4a85366', fontSize: 12 }}>{cell}</th>)}</tr></thead>
+                    <tbody>{rows.slice(1).map((row, ri) => <tr key={ri}>{row.map((cell, ci) => <td key={ci} style={{ padding: '7px 12px', borderBottom: '1px solid #e8e8e8', color: ci === 0 ? '#1a1a1a' : '#555', fontWeight: ci === 0 ? 600 : 400, fontSize: 12.5 }}>{cell}</td>)}</tr>)}</tbody>
+                  </table>
+                </div>;
+              }
+              // paragraph
+              return <p key={i} style={{ margin: '0 0 6px', fontSize: 13.5, lineHeight: 1.65, color: '#444' }}>
+                {text}{isV31 && <span className="badge-v31" style={{ marginLeft: 6 }}>v3.1</span>}
+              </p>;
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    // List view
     const q = entitySearch.toLowerCase();
     const filtered = q ? ENTITIES.filter(e => e[0].toLowerCase().includes(q) || e[3].includes(q) || e[4].toLowerCase().includes(q)) : ENTITIES;
     const cats = ['Core', 'New v3.0', 'New v3.1', 'Revised v3.1'];
-    const catColors = { 'Core': { bg: '#f5f5f5', color: '#555', badge: '#e0e0e0' }, 'New v3.0': { bg: '#e8f5e9', color: '#2e7d32', badge: '#c8e6c9' }, 'New v3.1': { bg: '#fff3e0', color: '#e65100', badge: '#ffe0b2' }, 'Revised v3.1': { bg: '#e3f2fd', color: '#1565c0', badge: '#bbdefb' } };
 
     return (
       <div style={{ maxWidth: 800, margin: '0 auto' }}>
@@ -1317,16 +1403,14 @@ export default function App() {
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {items.sort((a, b) => a[0].localeCompare(b[0])).map(ent => {
-                  const [name, sec, item, ver] = ent;
-                  const hasDetail = !(sec === 4 && item === 3) && !(sec === 5 && (item === 5 || item === 13 || item === 15));
+                  const [name, , , ver] = ent;
                   return (
-                    <button key={name} onClick={() => navigateToEntity(sec, item)}
+                    <button key={name} onClick={() => { setSelectedEntity(ent); contentRef.current?.scrollTo(0, 0); }}
                       style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: c.bg, border: `1px solid ${c.badge}`, borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, color: c.color, transition: 'all 0.12s', textAlign: 'left' }}
                       onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.08)'; }}
                       onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}>
                       <span style={{ fontWeight: 600 }}>{name}</span>
                       {ver !== '2.0' && <span style={{ fontSize: 9, background: c.badge, color: c.color, padding: '1px 5px', borderRadius: 3, fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>v{ver}</span>}
-                      {hasDetail && <span style={{ fontSize: 10, color: '#999' }}>→</span>}
                     </button>
                   );
                 })}

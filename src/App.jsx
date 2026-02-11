@@ -320,7 +320,6 @@ export default function App() {
   });
   const [comments, setComments] = useState({});
   const [commentingOn, setCommentingOn] = useState(null);
-  const [commentText, setCommentText] = useState("");
   const [commentAuthor, setCommentAuthor] = useState(() => {
     try { return localStorage.getItem("spec-author") || ""; } catch { return ""; }
   });
@@ -359,6 +358,7 @@ export default function App() {
   const [dragOver, setDragOver] = useState(false);
   const contentRef = useRef(null);
   const inputRef = useRef(null);
+  const editorRef = useRef(null);
   const fileInputRef = useRef(null);
   const canvasRef = useRef(null);
   const mediaRecorderRef = useRef(null);
@@ -384,11 +384,13 @@ export default function App() {
   };
 
   const addComment = useCallback(async () => {
-    if ((!commentText.trim() && !audioData && attachments.length === 0) || !commentingOn) return;
+    const html = editorRef.current ? editorRef.current.innerHTML : '';
+    const hasText = html.replace(/<[^>]*>/g, '').trim().length > 0;
+    if ((!hasText && !audioData && attachments.length === 0) || !commentingOn) return;
     const key = commentKey(commentingOn[0], commentingOn[1]);
     const author = commentAuthor.trim() || "Reviewer";
     try { localStorage.setItem("spec-author", author); } catch {}
-    const entry = { text: commentText.trim(), author, time: new Date().toISOString(), id: Date.now() };
+    const entry = { text: hasText ? html : '', author, time: new Date().toISOString(), id: Date.now() };
     if (audioData) entry.audio = audioData;
     if (attachments.length > 0) {
       const images = attachments.filter(a => a.isImage).map(a => a.data);
@@ -403,7 +405,7 @@ export default function App() {
       [key]: [...(comments[key] || []), entry]
     };
     setComments(newComments);
-    setCommentText("");
+    if (editorRef.current) editorRef.current.innerHTML = '';
     setAudioData(null);
     setAttachments([]);
     setTranscript('');
@@ -411,7 +413,7 @@ export default function App() {
     setSaving(true);
     await apiSave(newComments);
     setSaving(false);
-  }, [commentText, commentAuthor, commentingOn, comments, audioData, attachments]);
+  }, [commentAuthor, commentingOn, comments, audioData, attachments]);
 
   const drawWaveform = useCallback(() => {
     const canvas = canvasRef.current;
@@ -680,7 +682,7 @@ export default function App() {
               <div key={c.id} style={{ fontSize: 12, marginBottom: 4 }}>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
                   <span style={{ fontWeight: 600, color: '#4a7cc9', whiteSpace: 'nowrap' }}>{c.author}</span>
-                  <span style={{ flex: 1, color: '#555' }}>{c.text}</span>
+                  <span className="comment-html" style={{ flex: 1, color: '#555' }} dangerouslySetInnerHTML={{ __html: c.text }} />
                   <span style={{ fontSize: 10, color: '#999', whiteSpace: 'nowrap' }}>{new Date(c.time).toLocaleDateString()}</span>
                   <button onClick={() => deleteComment(activeSection, itemIdx, c.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#999', fontSize: 10 }}>✕</button>
                 </div>
@@ -700,7 +702,20 @@ export default function App() {
                 <input ref={fileInputRef} type="file" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv" onChange={handleFileUpload} style={{ display: 'none' }} />
               </div>
             </div>
-            <textarea value={commentText} onChange={e => setCommentText(e.target.value)} onPaste={handlePaste} onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) addComment(); }} placeholder="Add comment or feedback… (paste images, drag files, Cmd+Enter to submit)" style={{ width: '100%', minHeight: 60, padding: '8px 10px', background: dragOver ? 'rgba(74,124,201,0.06)' : '#fff', border: `1.5px ${dragOver ? 'dashed #4a7cc9' : 'solid #d0d0d0'}`, borderRadius: 4, color: '#1a1a1a', fontSize: 12, fontFamily: 'inherit', resize: 'vertical', lineHeight: 1.5, boxSizing: 'border-box', transition: 'border 0.15s, background 0.15s' }} />
+            <div style={{ border: `1.5px ${dragOver ? 'dashed #4a7cc9' : 'solid #d0d0d0'}`, borderRadius: 4, background: dragOver ? 'rgba(74,124,201,0.06)' : '#fff', transition: 'border 0.15s, background 0.15s' }}>
+              <div style={{ display: 'flex', gap: 2, padding: '4px 6px', borderBottom: '1px solid #e8e8e8', background: '#fafafa', borderRadius: '4px 4px 0 0', flexWrap: 'wrap' }}>
+                {[['bold','B','bold'],['italic','I','italic'],['underline','U','underline'],['strikeThrough','S̶','strikethrough']].map(([cmd, label, title]) => (
+                  <button key={cmd} title={title} onMouseDown={e => { e.preventDefault(); document.execCommand(cmd); }} style={{ padding: '2px 7px', background: 'transparent', border: '1px solid transparent', borderRadius: 3, cursor: 'pointer', fontSize: 12, fontWeight: cmd === 'bold' ? 700 : 400, fontStyle: cmd === 'italic' ? 'italic' : 'normal', textDecoration: cmd === 'underline' ? 'underline' : cmd === 'strikeThrough' ? 'line-through' : 'none', color: '#555', lineHeight: 1.3 }}>{label}</button>
+                ))}
+                <span style={{ width: 1, background: '#e0e0e0', margin: '2px 4px' }} />
+                <button title="Bullet list" onMouseDown={e => { e.preventDefault(); document.execCommand('insertUnorderedList'); }} style={{ padding: '2px 7px', background: 'transparent', border: '1px solid transparent', borderRadius: 3, cursor: 'pointer', fontSize: 12, color: '#555' }}>• List</button>
+                <button title="Numbered list" onMouseDown={e => { e.preventDefault(); document.execCommand('insertOrderedList'); }} style={{ padding: '2px 7px', background: 'transparent', border: '1px solid transparent', borderRadius: 3, cursor: 'pointer', fontSize: 12, color: '#555' }}>1. List</button>
+                <span style={{ width: 1, background: '#e0e0e0', margin: '2px 4px' }} />
+                <button title="Highlight" onMouseDown={e => { e.preventDefault(); document.execCommand('hiliteColor', false, '#fff3cd'); }} style={{ padding: '2px 7px', background: 'transparent', border: '1px solid transparent', borderRadius: 3, cursor: 'pointer', fontSize: 12, color: '#555' }}>🖍</button>
+                <button title="Clear formatting" onMouseDown={e => { e.preventDefault(); document.execCommand('removeFormat'); }} style={{ padding: '2px 7px', background: 'transparent', border: '1px solid transparent', borderRadius: 3, cursor: 'pointer', fontSize: 11, color: '#999' }}>T̸</button>
+              </div>
+              <div ref={editorRef} contentEditable suppressContentEditableWarning onPaste={handlePaste} onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); addComment(); } }} data-placeholder="Add comment or feedback… (Cmd+Enter to submit)" className="rtf-editor" style={{ minHeight: 180, maxHeight: 400, overflowY: 'auto', padding: '8px 10px', color: '#1a1a1a', fontSize: 12.5, fontFamily: 'inherit', lineHeight: 1.6, outline: 'none' }} />
+            </div>
             <div style={{ display: 'flex', gap: 6, marginTop: 6, alignItems: 'center' }}>
               <button onClick={addComment} style={{ padding: '6px 14px', background: '#8b6914', color: '#fff', border: 'none', borderRadius: 4, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Add</button>
               <button onClick={() => { setCommentingOn(null); setAudioData(null); setAttachments([]); setTranscript(''); setDragOver(false); if (isRecording) stopRecording(); }} style={{ padding: '6px 10px', background: 'none', color: '#888', border: '1px solid #d0d0d0', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>Cancel</button>
@@ -716,7 +731,7 @@ export default function App() {
             )}
             {(audioData || attachments.length > 0) && (
               <div style={{ width: '100%', marginTop: 6, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                {audioData && <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}><audio controls src={audioData} style={{ height: 28 }} /><button onClick={() => { setCommentText(transcript); }} title="Transcribe audio to text" style={{ padding: '3px 8px', background: transcript ? '#4a7cc9' : '#d0d0d0', color: '#fff', border: 'none', borderRadius: 3, fontSize: 10, fontWeight: 600, cursor: transcript ? 'pointer' : 'default', opacity: transcript ? 1 : 0.5 }}>Transcribe</button><button onClick={() => setAudioData(null)} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 10 }}>✕</button></div>}
+                {audioData && <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}><audio controls src={audioData} style={{ height: 28 }} /><button onClick={() => { if (editorRef.current && transcript) editorRef.current.innerText = transcript; }} title="Transcribe audio to text" style={{ padding: '3px 8px', background: transcript ? '#4a7cc9' : '#d0d0d0', color: '#fff', border: 'none', borderRadius: 3, fontSize: 10, fontWeight: 600, cursor: transcript ? 'pointer' : 'default', opacity: transcript ? 1 : 0.5 }}>Transcribe</button><button onClick={() => setAudioData(null)} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 10 }}>✕</button></div>}
                 {attachments.map(a => a.isImage ? (
                   <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}><img src={a.data} alt="preview" style={{ maxWidth: 80, maxHeight: 50, borderRadius: 4, border: '1px solid #e0e0e0' }} /><button onClick={() => setAttachments(prev => prev.filter(x => x.id !== a.id))} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 10 }}>✕</button></div>
                 ) : (
@@ -730,7 +745,7 @@ export default function App() {
                   <div key={c.id} style={{ fontSize: 12, marginBottom: 3 }}>
                     <div style={{ display: 'flex', gap: 8 }}>
                       <span style={{ fontWeight: 600, color: '#4a7cc9' }}>{c.author}</span>
-                      <span style={{ flex: 1, color: '#555' }}>{c.text}</span>
+                      <span className="comment-html" style={{ flex: 1, color: '#555' }} dangerouslySetInnerHTML={{ __html: c.text }} />
                       <button onClick={() => deleteComment(activeSection, itemIdx, c.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#999', fontSize: 10 }}>✕</button>
                     </div>
                     {c.audio && <audio controls src={c.audio} style={{ height: 24, marginTop: 2, maxWidth: '100%' }} />}
@@ -793,7 +808,7 @@ export default function App() {
                 </div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
                   <span style={{ fontWeight: 600, color: '#4a7cc9', fontSize: 13, whiteSpace: 'nowrap' }}>{c.author}</span>
-                  <span style={{ flex: 1, color: '#333', fontSize: 13 }}>{c.text}</span>
+                  <span className="comment-html" style={{ flex: 1, color: '#333', fontSize: 13 }} dangerouslySetInnerHTML={{ __html: c.text }} />
                   <span style={{ fontSize: 10, color: '#999', whiteSpace: 'nowrap' }}>{new Date(c.time).toLocaleDateString()}</span>
                   <button onClick={(e) => { e.stopPropagation(); deleteComment(c.secIdx, c.itemIdx, c.id); }}
                     style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#999', fontSize: 10, padding: '0 2px' }}>✕</button>
@@ -820,6 +835,14 @@ export default function App() {
         .sidebar-btn.active { background: rgba(139,105,20,0.06); border-left-color: #8b6914; color: #1a1a1a; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+        .rtf-editor:empty:before { content: attr(data-placeholder); color: #bbb; pointer-events: none; }
+        .rtf-editor ul, .rtf-editor ol { margin: 4px 0; padding-left: 20px; }
+        .rtf-editor li { margin-bottom: 2px; }
+        .rtf-editor b, .rtf-editor strong { font-weight: 700; }
+        .comment-html ul, .comment-html ol { margin: 2px 0; padding-left: 16px; }
+        .comment-html li { margin-bottom: 1px; }
+        .comment-html b, .comment-html strong { font-weight: 700; }
+        .comment-html p { margin: 0 0 4px; }
       `}</style>
 
       {sidebarOpen && (

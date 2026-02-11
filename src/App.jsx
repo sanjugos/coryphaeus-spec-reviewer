@@ -291,6 +291,27 @@ const VERSIONS = [
 const COMPETITORS_LIST = ["Close", "Copper", "Dynamics 365", "Freshsales", "HubSpot", "Monday CRM", "Pipedrive", "Salesforce", "Zoho", "Other"];
 const FEATURES_LIST = ["Account Planning", "AI Agents", "AI Safety", "Contact Center", "Data Model", "General", "Integrations", "Marketing", "MCP Apps", "Mobile", "Pricing", "Reporting", "Security", "Workflow"];
 
+// Entity catalog: [name, sectionIndex, itemIndex, version, category]
+const ENTITIES = [
+  ["Account",4,8,"2.0","Core"],["Prospect",4,3,"2.0","Core"],["Lead",4,10,"2.0","Core"],["Contact",4,13,"2.0","Core"],
+  ["Opportunity",4,16,"2.0","Core"],["Activity",4,3,"2.0","Core"],["Task",4,3,"2.0","Core"],["Product",4,3,"2.0","Core"],
+  ["Price Book",4,3,"2.0","Core"],["Quote",4,3,"2.0","Core"],["Invoice",5,5,"2.0","Core"],["Sales Order",4,3,"2.0","Core"],
+  ["Purchase Order",4,3,"2.0","Core"],["Case",4,3,"2.0","Core"],["Knowledge Article",4,3,"2.0","Core"],
+  ["Subscription",4,3,"2.0","Core"],["Insights Card",5,15,"2.0","Core"],["Campaign",4,3,"2.0","Core"],
+  ["Website",4,3,"2.0","Core"],["Landing Page",4,3,"2.0","Core"],["Blog",4,3,"2.0","Core"],["Workflow",4,3,"2.0","Core"],
+  ["Rules",4,3,"2.0","Core"],["Integration",4,3,"2.0","Core"],["Report",4,3,"2.0","Core"],["Dashboard",4,3,"2.0","Core"],
+  ["Contract",5,15,"2.0","Core"],["Event",4,3,"2.0","Core"],["Competitor",5,15,"2.0","Core"],
+  ["Offering",5,0,"3.0","New v3.0"],["Account Plan",5,2,"3.0","New v3.0"],["Payment",5,6,"3.0","New v3.0"],
+  ["Case Study",5,9,"3.0","New v3.0"],["SLA",5,13,"3.0","New v3.0"],["Risk Register",5,13,"3.0","New v3.0"],
+  ["Qualification Scoring",5,13,"3.0","New v3.0"],["Employee",5,13,"3.0","New v3.0"],["ICP",5,13,"3.0","New v3.0"],
+  ["Forms",5,13,"3.0","New v3.0"],["Loyalty Points",5,13,"3.0","New v3.0"],
+  ["Email/WhatsApp/SMS Templates",5,5,"3.0","New v3.0"],["Report Template",5,5,"3.0","New v3.0"],
+  ["Complaint (merged into Case)",5,7,"3.1","Revised v3.1"],
+  ["Qualification Sheet",5,11,"3.1","New v3.1"],["Goal (OKR)",5,17,"3.1","New v3.1"],
+  ["Fiscal Year Configuration",5,20,"3.1","New v3.1"],["Sales Target",5,22,"3.1","New v3.1"],
+  ["Monthly Revenue Projection",4,19,"3.1","New v3.1"],["Partner Contribution",4,22,"3.1","New v3.1"],
+];
+
 // ── API helpers (Azure Table Storage backed) ──
 const API_BASE = "/api/comments";
 
@@ -395,6 +416,8 @@ export default function App() {
   const [compVideo, setCompVideo] = useState(null);
   const [editingIntelId, setEditingIntelId] = useState(null);
   const [mediaModal, setMediaModal] = useState(null); // { items: [{type,src,name}], index: 0 }
+  const [showEntities, setShowEntities] = useState(() => window.location.hash === '#entities');
+  const [entitySearch, setEntitySearch] = useState('');
   const [modalRect, setModalRect] = useState({ x: 80, y: 40, w: 0, h: 0 }); // 0 = auto
   const dragRef = useRef(null); // { startX, startY, startRectX, startRectY, type: 'move'|'resize-*' }
   const contentRef = useRef(null);
@@ -446,10 +469,20 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (showEntities) { window.location.hash = 'entities'; return; }
     if (showCompetitors) { window.location.hash = 'competitors'; return; }
     contentRef.current?.scrollTo(0, 0);
     window.location.hash = S[activeSection][0];
-  }, [activeSection, showCompetitors]);
+  }, [activeSection, showCompetitors, showEntities]);
+
+  const navigateToEntity = useCallback((secIdx, itemIdx) => {
+    setShowEntities(false); setShowSummary(false); setShowCompetitors(false);
+    setActiveSection(secIdx);
+    setTimeout(() => {
+      const el = document.getElementById(`spec-item-${itemIdx}`);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 100);
+  }, []);
 
   const commentKey = (secIdx, itemIdx) => `${S[secIdx][0]}-${itemIdx}`;
   const getComments = (secIdx, itemIdx) => comments[commentKey(secIdx, itemIdx)] || [];
@@ -781,8 +814,8 @@ export default function App() {
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e) => {
-      if (e.key === 'ArrowRight' && !commentingOn) { setShowSummary(false); setShowCompetitors(false); setActiveSection(s => Math.min(S.length - 1, s + 1)); }
-      if (e.key === 'ArrowLeft' && !commentingOn) { setShowSummary(false); setShowCompetitors(false); setActiveSection(s => Math.max(0, s - 1)); }
+      if (e.key === 'ArrowRight' && !commentingOn) { setShowSummary(false); setShowCompetitors(false); setShowEntities(false); setActiveSection(s => Math.min(S.length - 1, s + 1)); }
+      if (e.key === 'ArrowLeft' && !commentingOn) { setShowSummary(false); setShowCompetitors(false); setShowEntities(false); setActiveSection(s => Math.max(0, s - 1)); }
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); document.querySelector('#search-input')?.focus(); }
     };
     window.addEventListener('keydown', handler);
@@ -873,7 +906,7 @@ export default function App() {
     }
 
     return (
-      <div key={itemIdx} className="spec-item" style={{ position: 'relative', marginBottom: type === 'h' ? 8 : 4, padding: '6px 10px', borderRadius: 5, background: isCommenting ? 'rgba(180,130,40,0.06)' : itemComments.length > 0 ? 'rgba(100,149,237,0.06)' : 'transparent', borderLeft: itemComments.length > 0 ? '3px solid #6495ed66' : '3px solid transparent', transition: 'all 0.15s' }}>
+      <div key={itemIdx} id={`spec-item-${itemIdx}`} className="spec-item" style={{ position: 'relative', marginBottom: type === 'h' ? 8 : 4, padding: '6px 10px', borderRadius: 5, background: isCommenting ? 'rgba(180,130,40,0.06)' : itemComments.length > 0 ? 'rgba(100,149,237,0.06)' : 'transparent', borderLeft: itemComments.length > 0 ? '3px solid #6495ed66' : '3px solid transparent', transition: 'all 0.15s' }}>
         {content}
         <button className="cmt-btn" onClick={() => setCommentingOn(isCommenting ? null : [activeSection, itemIdx])}
           style={{ position: 'absolute', right: 4, top: 4, opacity: isCommenting || itemComments.length > 0 ? 1 : 0, background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, color: itemComments.length > 0 ? '#4a7cc9' : '#999', padding: '2px 6px', transition: 'opacity 0.15s' }}>
@@ -1262,6 +1295,54 @@ export default function App() {
     );
   };
 
+  const renderEntitiesView = () => {
+    const q = entitySearch.toLowerCase();
+    const filtered = q ? ENTITIES.filter(e => e[0].toLowerCase().includes(q) || e[3].includes(q) || e[4].toLowerCase().includes(q)) : ENTITIES;
+    const cats = ['Core', 'New v3.0', 'New v3.1', 'Revised v3.1'];
+    const catColors = { 'Core': { bg: '#f5f5f5', color: '#555', badge: '#e0e0e0' }, 'New v3.0': { bg: '#e8f5e9', color: '#2e7d32', badge: '#c8e6c9' }, 'New v3.1': { bg: '#fff3e0', color: '#e65100', badge: '#ffe0b2' }, 'Revised v3.1': { bg: '#e3f2fd', color: '#1565c0', badge: '#bbdefb' } };
+
+    return (
+      <div style={{ maxWidth: 800, margin: '0 auto' }}>
+        <input value={entitySearch} onChange={e => setEntitySearch(e.target.value)} placeholder="Search entities…"
+          style={{ width: '100%', padding: '8px 12px', fontSize: 13, border: '1px solid #d0d0d0', borderRadius: 6, marginBottom: 20, fontFamily: 'inherit', background: '#fff', boxSizing: 'border-box' }} />
+        {cats.map(cat => {
+          const items = filtered.filter(e => e[4] === cat);
+          if (items.length === 0) return null;
+          const c = catColors[cat];
+          return (
+            <div key={cat} style={{ marginBottom: 24 }}>
+              <div style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 16, color: '#1a1a1a', borderBottom: '1px solid #e0e0e0', paddingBottom: 8, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                {cat}
+                <span style={{ fontSize: 11, color: '#888', fontWeight: 400, fontFamily: 'inherit' }}>({items.length} entities)</span>
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {items.sort((a, b) => a[0].localeCompare(b[0])).map(ent => {
+                  const [name, sec, item, ver] = ent;
+                  const hasDetail = !(sec === 4 && item === 3) && !(sec === 5 && (item === 5 || item === 13 || item === 15));
+                  return (
+                    <button key={name} onClick={() => navigateToEntity(sec, item)}
+                      style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: c.bg, border: `1px solid ${c.badge}`, borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, color: c.color, transition: 'all 0.12s', textAlign: 'left' }}
+                      onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.08)'; }}
+                      onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}>
+                      <span style={{ fontWeight: 600 }}>{name}</span>
+                      {ver !== '2.0' && <span style={{ fontSize: 9, background: c.badge, color: c.color, padding: '1px 5px', borderRadius: 3, fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>v{ver}</span>}
+                      {hasDetail && <span style={{ fontSize: 10, color: '#999' }}>→</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+        {filtered.length === 0 && (
+          <div style={{ textAlign: 'center', padding: '40px 20px', color: '#999' }}>
+            <div style={{ fontSize: 14 }}>No entities matching "{entitySearch}"</div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   if (!loaded) return <div style={{ background: '#fff', color: '#888', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Georgia, serif', fontSize: 18 }}>Loading Coryphaeus Spec…</div>;
 
   return (
@@ -1315,18 +1396,22 @@ export default function App() {
             </label>
           </div>
           <div style={{ flex: 1, overflowY: 'auto', padding: '6px 0' }}>
-            <button className={`sidebar-btn ${showSummary && !showCompetitors ? 'active' : ''}`} onClick={() => { setShowCompetitors(false); setShowSummary(true); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
+            <button className={`sidebar-btn ${showSummary && !showCompetitors && !showEntities ? 'active' : ''}`} onClick={() => { setShowCompetitors(false); setShowEntities(false); setShowSummary(true); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
               <span style={{ flex: 1 }}>💬 Comments Summary</span>
               {totalComments > 0 && <span style={{ fontSize: 10, background: '#e8f0fc', color: '#4a7cc9', padding: '1px 5px', borderRadius: 3 }}>{totalComments}</span>}
             </button>
-            <button className={`sidebar-btn ${showCompetitors ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowCompetitors(true); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
+            <button className={`sidebar-btn ${showCompetitors ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowEntities(false); setShowCompetitors(true); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
               <span style={{ flex: 1 }}>🎯 Competitors</span>
               {competitorData.length > 0 && <span style={{ fontSize: 10, background: '#fce4ec', color: '#c62828', padding: '1px 5px', borderRadius: 3 }}>{competitorData.length}</span>}
+            </button>
+            <button className={`sidebar-btn ${showEntities ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowCompetitors(false); setShowEntities(true); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
+              <span style={{ flex: 1 }}>🗃️ Entities</span>
+              <span style={{ fontSize: 10, background: '#e8eaf6', color: '#3949ab', padding: '1px 5px', borderRadius: 3 }}>{ENTITIES.length}</span>
             </button>
             {filteredSections.map(([s, realIdx]) => {
               const cmtCount = sectionCommentCount(realIdx);
               return (
-                <button key={s[0]} className={`sidebar-btn ${realIdx === activeSection && !showSummary && !showCompetitors ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowCompetitors(false); setActiveSection(realIdx); }}>
+                <button key={s[0]} className={`sidebar-btn ${realIdx === activeSection && !showSummary && !showCompetitors && !showEntities ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowCompetitors(false); setShowEntities(false); setActiveSection(realIdx); }}>
                   <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s[1]}</span>
                   <span style={{ display: 'flex', gap: 4 }}>
                     {s[2] > 0 && showChanges && <span style={{ fontSize: 10, background: '#f5e6c8', color: '#8b6914', padding: '1px 5px', borderRadius: 3, fontFamily: 'monospace' }}>{s[2]}</span>}
@@ -1343,15 +1428,18 @@ export default function App() {
         <div style={{ padding: '10px 20px', borderBottom: '1px solid #e0e0e0', display: 'flex', alignItems: 'center', gap: 12, background: '#f8f8f6', minHeight: 44 }}>
           {!sidebarOpen && <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 16 }}>▶</button>}
           <div style={{ flex: 1 }}>
-            <span style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 18, color: '#1a1a1a' }}>{showCompetitors ? '🎯 Competitors Intel' : showSummary ? 'Comments Summary' : section[1]}</span>
-            <span style={{ fontSize: 11, color: '#999', marginLeft: 10 }}>{showCompetitors ? 'All competitors' : showSummary ? 'All sections' : `${section[0]}.md`}</span>
+            <span style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 18, color: '#1a1a1a' }}>{showEntities ? '🗃️ Data Model Entities' : showCompetitors ? '🎯 Competitors Intel' : showSummary ? 'Comments Summary' : section[1]}</span>
+            <span style={{ fontSize: 11, color: '#999', marginLeft: 10 }}>{showEntities ? '48 entities (v3.1)' : showCompetitors ? 'All competitors' : showSummary ? 'All sections' : `${section[0]}.md`}</span>
           </div>
+          {showEntities && <span style={{ fontSize: 11, color: '#999' }}>{ENTITIES.length} entities</span>}
           {showCompetitors && <span style={{ fontSize: 11, color: '#999' }}>{competitorData.length} entries</span>}
-          {!showSummary && !showCompetitors && <span style={{ fontSize: 11, color: '#999' }}>{section[3].length} items</span>}
-          {!showSummary && !showCompetitors && section[2] > 0 && showChanges && <span className="badge-v31">{section[2]} v3.1</span>}
+          {!showSummary && !showCompetitors && !showEntities && <span style={{ fontSize: 11, color: '#999' }}>{section[3].length} items</span>}
+          {!showSummary && !showCompetitors && !showEntities && section[2] > 0 && showChanges && <span className="badge-v31">{section[2]} v3.1</span>}
         </div>
         <div ref={contentRef} style={{ flex: 1, overflowY: 'auto', padding: '16px 24px 80px' }}>
-          {showCompetitors ? (
+          {showEntities ? (
+            <div style={{ animation: 'fadeIn 0.2s ease' }}>{renderEntitiesView()}</div>
+          ) : showCompetitors ? (
             <div style={{ animation: 'fadeIn 0.2s ease' }}>{renderCompetitorsView()}</div>
           ) : showSummary ? (
             <div style={{ animation: 'fadeIn 0.2s ease' }}>{renderSummaryView()}</div>
@@ -1362,7 +1450,16 @@ export default function App() {
           )}
         </div>
         <div style={{ padding: '8px 20px', borderTop: '1px solid #e0e0e0', background: '#f8f8f6', display: 'flex', alignItems: 'center', gap: 16, fontSize: 11, color: '#888' }}>
-          {showCompetitors ? (
+          {showEntities ? (
+            <>
+              <span style={{ color: '#3949ab' }}>🗃️ {ENTITIES.length} entities</span>
+              <span>•</span>
+              <span>{ENTITIES.filter(e => e[3] === '2.0').length} core + {ENTITIES.filter(e => e[3] === '3.0').length} v3.0 + {ENTITIES.filter(e => e[3] === '3.1').length} v3.1</span>
+              <span>•</span>
+              <span>Click any entity to jump to its spec definition</span>
+              {saving && <span style={{ color: '#4caf50' }}>● Saving…</span>}
+            </>
+          ) : showCompetitors ? (
             <>
               <span style={{ color: '#c62828' }}>🎯 {competitorData.length} intel entries</span>
               <span>•</span>

@@ -371,6 +371,29 @@ async function compApiSave(data) {
   } catch {}
 }
 
+const PRIO_API = "/api/priorities";
+
+async function prioritiesApiGet() {
+  try {
+    const r = await fetch(PRIO_API);
+    if (!r.ok) throw new Error(r.statusText);
+    const data = await r.json();
+    if (Array.isArray(data) && data.length > 0) return data;
+    try { const local = JSON.parse(localStorage.getItem("coryphaeus-priorities") || "[]"); if (local.length > 0) return local; } catch {}
+    return data;
+  } catch {
+    try { return JSON.parse(localStorage.getItem("coryphaeus-priorities") || "[]"); } catch { return []; }
+  }
+}
+
+async function prioritiesApiSave(data) {
+  try { localStorage.setItem("coryphaeus-priorities", JSON.stringify(data)); } catch {}
+  try {
+    const r = await fetch(PRIO_API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+    if (!r.ok) throw new Error(r.statusText);
+  } catch {}
+}
+
 // ── Main App ──
 export default function App() {
   const [activeSection, setActiveSection] = useState(() => {
@@ -431,6 +454,24 @@ export default function App() {
   const [entitySearch, setEntitySearch] = useState('');
   const [selectedEntity, setSelectedEntity] = useState(null); // entity tuple or null
   const [cameFromEntities, setCameFromEntities] = useState(null); // entity tuple to return to, or null
+  const [showPriorities, setShowPriorities] = useState(() => window.location.hash === '#priorities');
+  const [prioritiesData, setPrioritiesData] = useState([]);
+  const [prioritySearch, setPrioritySearch] = useState('');
+  const [priorityStatusFilter, setPriorityStatusFilter] = useState('');
+  const [addingPriority, setAddingPriority] = useState(false);
+  const [editingPriorityId, setEditingPriorityId] = useState(null);
+  const [priorityForm, setPriorityForm] = useState({ title: '', description: '', status: 'pending', links: [] });
+  const [priorityNewLink, setPriorityNewLink] = useState('');
+  const [showWorkbench, setShowWorkbench] = useState(false);
+  const [workbenchText, setWorkbenchText] = useState('');
+  const [workbenchUrl, setWorkbenchUrl] = useState('');
+  const [workbenchSuggestions, setWorkbenchSuggestions] = useState([]);
+  const [workbenchProcessing, setWorkbenchProcessing] = useState(false);
+  const [workbenchError, setWorkbenchError] = useState('');
+  const [editingSuggestionIdx, setEditingSuggestionIdx] = useState(null);
+  const [editingSuggestionForm, setEditingSuggestionForm] = useState({ title: '', description: '' });
+  const [dragPriorityId, setDragPriorityId] = useState(null);
+  const [dragOverPriorityId, setDragOverPriorityId] = useState(null);
   const [modalRect, setModalRect] = useState({ x: 80, y: 40, w: 0, h: 0 }); // 0 = auto
   const dragRef = useRef(null); // { startX, startY, startRectX, startRectY, type: 'move'|'resize-*' }
   const contentRef = useRef(null);
@@ -448,6 +489,7 @@ export default function App() {
   const compEditorRef = useRef(null);
   const compFileInputRef = useRef(null);
   const compVideoInputRef = useRef(null);
+  const priorityEditorRef = useRef(null);
 
   // Derive next comment number from highest existing num
   const nextCommentNum = useCallback(() => {
@@ -479,18 +521,20 @@ export default function App() {
       if (needsSave) apiSave(c);
     });
     compApiGet().then(data => setCompetitorData(Array.isArray(data) ? data : []));
+    prioritiesApiGet().then(data => setPrioritiesData(Array.isArray(data) ? data : []));
   }, []);
 
   useEffect(() => {
+    if (showPriorities) { window.location.hash = 'priorities'; return; }
     if (showEntities) { window.location.hash = 'entities'; return; }
     if (showCompetitors) { window.location.hash = 'competitors'; return; }
     contentRef.current?.scrollTo(0, 0);
     window.location.hash = S[activeSection][0];
-  }, [activeSection, showCompetitors, showEntities]);
+  }, [activeSection, showCompetitors, showEntities, showPriorities]);
 
   const navigateToEntity = useCallback((secIdx, itemIdx, entity) => {
     setCameFromEntities(entity || true);
-    setShowEntities(false); setShowSummary(false); setShowCompetitors(false);
+    setShowEntities(false); setShowSummary(false); setShowCompetitors(false); setShowPriorities(false);
     setActiveSection(secIdx);
     setTimeout(() => {
       const el = document.getElementById(`spec-item-${itemIdx}`);
@@ -789,6 +833,203 @@ export default function App() {
     setSaving(false);
   }, [editingIntelId, intelForm, competitorData, attachments, audioData, compVideo]);
 
+  // ── Priorities CRUD + DnD ──
+  const nextPriorityNum = useCallback(() => {
+    let max = 0;
+    prioritiesData.forEach(e => { const n = parseInt((e.num || '').replace('P-', ''), 10); if (n > max) max = n; });
+    return `P-${String(max + 1).padStart(3, '0')}`;
+  }, [prioritiesData]);
+
+  const addPriority = useCallback(async () => {
+    const html = priorityEditorRef.current ? priorityEditorRef.current.innerHTML : '';
+    if (!priorityForm.title.trim()) return;
+    const entry = {
+      id: Date.now(), num: nextPriorityNum(),
+      title: priorityForm.title.trim(),
+      description: html,
+      status: priorityForm.status || 'pending',
+      links: priorityForm.links.filter(l => l.trim()),
+      rank: prioritiesData.length + 1,
+      author: commentAuthor.trim() || 'Reviewer',
+      time: new Date().toISOString()
+    };
+    const newData = [...prioritiesData, entry];
+    setPrioritiesData(newData);
+    setAddingPriority(false);
+    setPriorityForm({ title: '', description: '', status: 'pending', links: [] });
+    setPriorityNewLink('');
+    if (priorityEditorRef.current) priorityEditorRef.current.innerHTML = '';
+    setSaving(true);
+    await prioritiesApiSave(newData);
+    setSaving(false);
+  }, [priorityForm, prioritiesData, commentAuthor, nextPriorityNum]);
+
+  const deletePriority = useCallback(async (id) => {
+    const newData = prioritiesData.filter(e => e.id !== id).map((e, i) => ({ ...e, rank: i + 1 }));
+    setPrioritiesData(newData);
+    setSaving(true);
+    await prioritiesApiSave(newData);
+    setSaving(false);
+  }, [prioritiesData]);
+
+  const togglePriorityStatus = useCallback(async (id) => {
+    const cycle = { pending: 'ongoing', ongoing: 'completed', completed: 'pending' };
+    const newData = prioritiesData.map(e => e.id === id ? { ...e, status: cycle[e.status] || 'pending' } : e);
+    setPrioritiesData(newData);
+    setSaving(true);
+    await prioritiesApiSave(newData);
+    setSaving(false);
+  }, [prioritiesData]);
+
+  const startEditPriority = useCallback((entry) => {
+    setEditingPriorityId(entry.id);
+    setAddingPriority(true);
+    setPriorityForm({
+      title: entry.title || '',
+      description: entry.description || '',
+      status: entry.status || 'pending',
+      links: entry.links || []
+    });
+    setPriorityNewLink('');
+    setTimeout(() => { if (priorityEditorRef.current) priorityEditorRef.current.innerHTML = entry.description || ''; }, 50);
+  }, []);
+
+  const saveEditPriority = useCallback(async () => {
+    const html = priorityEditorRef.current ? priorityEditorRef.current.innerHTML : '';
+    const newData = prioritiesData.map(e => {
+      if (e.id !== editingPriorityId) return e;
+      return { ...e, title: priorityForm.title.trim(), description: html, status: priorityForm.status, links: priorityForm.links.filter(l => l.trim()) };
+    });
+    setPrioritiesData(newData);
+    setEditingPriorityId(null);
+    setAddingPriority(false);
+    setPriorityForm({ title: '', description: '', status: 'pending', links: [] });
+    setPriorityNewLink('');
+    if (priorityEditorRef.current) priorityEditorRef.current.innerHTML = '';
+    setSaving(true);
+    await prioritiesApiSave(newData);
+    setSaving(false);
+  }, [editingPriorityId, priorityForm, prioritiesData]);
+
+  const handlePriorityDragStart = useCallback((e, id) => {
+    setDragPriorityId(id);
+    e.dataTransfer.effectAllowed = 'move';
+  }, []);
+  const handlePriorityDragOver = useCallback((e, id) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverPriorityId(id);
+  }, []);
+  const handlePriorityDrop = useCallback(async (e, targetId) => {
+    e.preventDefault();
+    if (!dragPriorityId || dragPriorityId === targetId) { setDragPriorityId(null); setDragOverPriorityId(null); return; }
+    const items = [...prioritiesData];
+    const fromIdx = items.findIndex(p => p.id === dragPriorityId);
+    const toIdx = items.findIndex(p => p.id === targetId);
+    if (fromIdx < 0 || toIdx < 0) { setDragPriorityId(null); setDragOverPriorityId(null); return; }
+    const [moved] = items.splice(fromIdx, 1);
+    items.splice(toIdx, 0, moved);
+    const reranked = items.map((p, i) => ({ ...p, rank: i + 1 }));
+    setPrioritiesData(reranked);
+    setDragPriorityId(null);
+    setDragOverPriorityId(null);
+    setSaving(true);
+    await prioritiesApiSave(reranked);
+    setSaving(false);
+  }, [dragPriorityId, prioritiesData]);
+  const handlePriorityDragEnd = useCallback(() => {
+    setDragPriorityId(null);
+    setDragOverPriorityId(null);
+  }, []);
+
+  // ── Workbench ──
+  const processWorkbenchTranscript = useCallback(async () => {
+    if (!workbenchText.trim()) return;
+    setWorkbenchProcessing(true);
+    setWorkbenchError('');
+    try {
+      const r = await fetch('/api/workbench', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'transcript', content: workbenchText })
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = await r.json();
+      if (data.error) throw new Error(data.error);
+      setWorkbenchSuggestions(data.suggestions || []);
+    } catch (e) {
+      // Client-side regex fallback
+      const lines = workbenchText.split(/\n/);
+      const suggestions = [];
+      for (const line of lines) {
+        const t = line.trim();
+        const actionMatch = t.match(/^(?:action\s*(?:item)?|todo|task|priority|follow[- ]?up)\s*[:—-]\s*(.+)/i);
+        if (actionMatch) { suggestions.push({ title: actionMatch[1].trim().slice(0, 120), description: '', confidence: 0.7 }); continue; }
+        const numMatch = t.match(/^\d+[.)]\s+(.+)/);
+        if (numMatch && numMatch[1].length > 10 && /^(implement|build|create|add|fix|update|review|set up|establish|develop|integrate|design|prepare|schedule|plan|analyze|evaluate|migrate|deploy|test|launch|research|investigate|define|document|configure|ensure|enable|improve|optimize|resolve|address|complete|finalize|prioritize|assess)/i.test(numMatch[1])) {
+          suggestions.push({ title: numMatch[1].trim().slice(0, 120), description: '', confidence: 0.5 });
+        }
+        const bulletMatch = t.match(/^[-•*]\s+(.+)/);
+        if (bulletMatch && bulletMatch[1].length > 10 && /^(implement|build|create|add|fix|update|review|set up|establish|develop|integrate|design|prepare|schedule|plan|analyze|evaluate|migrate|deploy|test|launch|research|investigate|define|document|configure|ensure|enable|improve|optimize|resolve|address|complete|finalize|prioritize|assess|need to|should|must|will|we'll|let's|going to)/i.test(bulletMatch[1])) {
+          suggestions.push({ title: bulletMatch[1].trim().slice(0, 120), description: '', confidence: 0.4 });
+        }
+      }
+      setWorkbenchSuggestions(suggestions.slice(0, 15));
+      if (suggestions.length === 0) setWorkbenchError('No actionable priorities found. Try pasting text with action items, bullet points, or numbered lists.');
+    }
+    setWorkbenchProcessing(false);
+  }, [workbenchText]);
+
+  const processWorkbenchUrl = useCallback(async () => {
+    if (!workbenchUrl.trim()) return;
+    setWorkbenchProcessing(true);
+    setWorkbenchError('');
+    try {
+      const r = await fetch('/api/workbench', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'url', content: workbenchUrl })
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = await r.json();
+      if (data.error) throw new Error(data.error);
+      setWorkbenchSuggestions(data.suggestions || []);
+      if ((data.suggestions || []).length === 0) setWorkbenchError('No actionable priorities found from this URL.');
+    } catch (e) {
+      setWorkbenchError(`Failed to analyze URL: ${e.message}`);
+    }
+    setWorkbenchProcessing(false);
+  }, [workbenchUrl]);
+
+  const addSuggestionAsPriority = useCallback(async (suggestion) => {
+    const entry = {
+      id: Date.now(), num: nextPriorityNum(),
+      title: suggestion.title,
+      description: suggestion.description || '',
+      status: 'pending',
+      links: [],
+      rank: prioritiesData.length + 1,
+      author: commentAuthor.trim() || 'Reviewer',
+      time: new Date().toISOString()
+    };
+    const newData = [...prioritiesData, entry];
+    setPrioritiesData(newData);
+    setWorkbenchSuggestions(prev => prev.filter(s => s !== suggestion));
+    setSaving(true);
+    await prioritiesApiSave(newData);
+    setSaving(false);
+  }, [prioritiesData, commentAuthor, nextPriorityNum]);
+
+  const startEditSuggestion = useCallback((idx) => {
+    setEditingSuggestionIdx(idx);
+    setEditingSuggestionForm({ title: workbenchSuggestions[idx].title, description: workbenchSuggestions[idx].description || '' });
+  }, [workbenchSuggestions]);
+
+  const saveAndAddEditedSuggestion = useCallback(async () => {
+    if (editingSuggestionIdx === null) return;
+    const edited = { ...workbenchSuggestions[editingSuggestionIdx], title: editingSuggestionForm.title, description: editingSuggestionForm.description };
+    setEditingSuggestionIdx(null);
+    await addSuggestionAsPriority(edited);
+  }, [editingSuggestionIdx, editingSuggestionForm, workbenchSuggestions, addSuggestionAsPriority]);
+
   useEffect(() => {
     if (commentingOn && inputRef.current) inputRef.current.focus();
   }, [commentingOn]);
@@ -828,8 +1069,8 @@ export default function App() {
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e) => {
-      if (e.key === 'ArrowRight' && !commentingOn) { setShowSummary(false); setShowCompetitors(false); setShowEntities(false); setActiveSection(s => Math.min(S.length - 1, s + 1)); }
-      if (e.key === 'ArrowLeft' && !commentingOn) { setShowSummary(false); setShowCompetitors(false); setShowEntities(false); setActiveSection(s => Math.max(0, s - 1)); }
+      if (e.key === 'ArrowRight' && !commentingOn) { setShowSummary(false); setShowCompetitors(false); setShowEntities(false); setShowPriorities(false); setActiveSection(s => Math.min(S.length - 1, s + 1)); }
+      if (e.key === 'ArrowLeft' && !commentingOn) { setShowSummary(false); setShowCompetitors(false); setShowEntities(false); setShowPriorities(false); setActiveSection(s => Math.max(0, s - 1)); }
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); document.querySelector('#search-input')?.focus(); }
     };
     window.addEventListener('keydown', handler);
@@ -1452,6 +1693,237 @@ export default function App() {
     );
   };
 
+  const renderPrioritiesView = () => {
+    const statusColors = {
+      pending: { bg: '#fff3e0', color: '#e65100', label: 'Pending' },
+      ongoing: { bg: '#e3f2fd', color: '#1565c0', label: 'Ongoing' },
+      completed: { bg: '#e8f5e9', color: '#2e7d32', label: 'Completed' }
+    };
+
+    let entries = [...prioritiesData].sort((a, b) => (a.rank || 0) - (b.rank || 0));
+    if (priorityStatusFilter) entries = entries.filter(e => e.status === priorityStatusFilter);
+    if (prioritySearch) {
+      const q = prioritySearch.toLowerCase();
+      entries = entries.filter(e =>
+        (e.title || '').toLowerCase().includes(q) ||
+        (e.description || '').replace(/<[^>]*>/g, '').toLowerCase().includes(q) ||
+        (e.num || '').toLowerCase().includes(q) ||
+        (e.links || []).some(l => l.toLowerCase().includes(q))
+      );
+    }
+    const canDrag = !priorityStatusFilter && !prioritySearch;
+
+    const toolbarBtn = (cmd, label) => (
+      <button key={cmd} title={cmd} onMouseDown={e => { e.preventDefault(); document.execCommand(cmd, false, null); }}
+        style={{ padding: '2px 7px', background: 'transparent', border: '1px solid transparent', borderRadius: 3, cursor: 'pointer', fontSize: 12, fontWeight: cmd === 'bold' ? 700 : 400, fontStyle: cmd === 'italic' ? 'italic' : 'normal', textDecoration: cmd === 'underline' ? 'underline' : cmd === 'strikeThrough' ? 'line-through' : 'none', color: '#555', lineHeight: 1.3 }}>{label}</button>
+    );
+
+    const statusPill = (status, onClick) => {
+      const s = statusColors[status] || statusColors.pending;
+      return <span onClick={onClick} style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 12, fontSize: 11, fontWeight: 600, background: s.bg, color: s.color, cursor: onClick ? 'pointer' : 'default', userSelect: 'none', transition: 'all 0.15s' }}>{s.label}</span>;
+    };
+
+    return (
+      <div style={{ maxWidth: 900, margin: '0 auto' }}>
+        {/* Toolbar */}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
+          <button onClick={() => { setEditingPriorityId(null); setAddingPriority(true); setPriorityForm({ title: '', description: '', status: 'pending', links: [] }); setPriorityNewLink(''); setTimeout(() => { if (priorityEditorRef.current) priorityEditorRef.current.innerHTML = ''; }, 50); }}
+            style={{ padding: '7px 14px', background: '#8b6914', color: '#fff', border: 'none', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>+ Add Priority</button>
+          <button onClick={() => setShowWorkbench(w => !w)}
+            style={{ padding: '7px 14px', background: showWorkbench ? '#5c6bc0' : '#fff', color: showWorkbench ? '#fff' : '#5c6bc0', border: '1px solid #5c6bc0', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+            {showWorkbench ? '✕ Close Workbench' : '🤖 AI Workbench'}
+          </button>
+          <select value={priorityStatusFilter} onChange={e => setPriorityStatusFilter(e.target.value)}
+            style={{ padding: '6px 8px', fontSize: 12, background: '#fff', color: '#1a1a1a', border: '1px solid #d0d0d0', borderRadius: 4, fontFamily: 'inherit' }}>
+            <option value="">All statuses</option>
+            <option value="pending">Pending</option>
+            <option value="ongoing">Ongoing</option>
+            <option value="completed">Completed</option>
+          </select>
+          <input value={prioritySearch} onChange={e => setPrioritySearch(e.target.value)} placeholder="Search priorities…"
+            style={{ padding: '6px 10px', fontSize: 12, background: '#fff', border: '1px solid #d0d0d0', borderRadius: 4, fontFamily: 'inherit', flex: 1, minWidth: 120 }} />
+        </div>
+
+        {/* AI Workbench Panel */}
+        {showWorkbench && (
+          <div style={{ background: '#f5f3ff', border: '1px solid #c5cae9', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#3949ab', marginBottom: 12 }}>🤖 AI Workbench</div>
+
+            {/* Transcript input */}
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 11, color: '#666', marginBottom: 4, fontWeight: 600 }}>Paste call transcript or notes:</div>
+              <textarea value={workbenchText} onChange={e => setWorkbenchText(e.target.value)} rows={5} placeholder="Paste meeting notes, call transcript, or any text with action items…"
+                style={{ width: '100%', padding: 8, fontSize: 12, border: '1px solid #d0d0d0', borderRadius: 4, fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box' }} />
+              <button onClick={processWorkbenchTranscript} disabled={workbenchProcessing || !workbenchText.trim()}
+                style={{ marginTop: 6, padding: '6px 14px', background: workbenchProcessing ? '#999' : '#3949ab', color: '#fff', border: 'none', borderRadius: 4, fontSize: 12, fontWeight: 600, cursor: workbenchProcessing ? 'wait' : 'pointer' }}>
+                {workbenchProcessing ? 'Processing…' : 'Extract Priorities'}
+              </button>
+            </div>
+
+            {/* URL input */}
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 11, color: '#666', marginBottom: 4, fontWeight: 600 }}>Or analyze a URL:</div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input value={workbenchUrl} onChange={e => setWorkbenchUrl(e.target.value)} placeholder="https://example.com/article"
+                  style={{ flex: 1, padding: '6px 8px', fontSize: 12, border: '1px solid #d0d0d0', borderRadius: 4, fontFamily: 'inherit' }} />
+                <button onClick={processWorkbenchUrl} disabled={workbenchProcessing || !workbenchUrl.trim()}
+                  style={{ padding: '6px 14px', background: workbenchProcessing ? '#999' : '#3949ab', color: '#fff', border: 'none', borderRadius: 4, fontSize: 12, fontWeight: 600, cursor: workbenchProcessing ? 'wait' : 'pointer', whiteSpace: 'nowrap' }}>
+                  {workbenchProcessing ? 'Processing…' : 'Analyze'}
+                </button>
+              </div>
+            </div>
+
+            {workbenchError && <div style={{ color: '#c62828', fontSize: 12, marginBottom: 8 }}>{workbenchError}</div>}
+
+            {/* Suggestions */}
+            {workbenchSuggestions.length > 0 && (
+              <div>
+                <div style={{ fontSize: 11, color: '#666', marginBottom: 6, fontWeight: 600 }}>Suggestions ({workbenchSuggestions.length}):</div>
+                {workbenchSuggestions.map((s, idx) => (
+                  <div key={idx} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '8px 10px', background: '#fff', border: '1px solid #e0e0e0', borderRadius: 6, marginBottom: 6 }}>
+                    {editingSuggestionIdx === idx ? (
+                      <div style={{ flex: 1 }}>
+                        <input value={editingSuggestionForm.title} onChange={e => setEditingSuggestionForm(f => ({ ...f, title: e.target.value }))}
+                          style={{ width: '100%', padding: '4px 6px', fontSize: 12, border: '1px solid #d0d0d0', borderRadius: 3, marginBottom: 4, fontFamily: 'inherit', boxSizing: 'border-box' }} />
+                        <input value={editingSuggestionForm.description} onChange={e => setEditingSuggestionForm(f => ({ ...f, description: e.target.value }))} placeholder="Description (optional)"
+                          style={{ width: '100%', padding: '4px 6px', fontSize: 11, border: '1px solid #d0d0d0', borderRadius: 3, marginBottom: 4, fontFamily: 'inherit', boxSizing: 'border-box' }} />
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <button onClick={saveAndAddEditedSuggestion}
+                            style={{ padding: '3px 10px', background: '#2e7d32', color: '#fff', border: 'none', borderRadius: 3, fontSize: 11, cursor: 'pointer' }}>Save & Add</button>
+                          <button onClick={() => setEditingSuggestionIdx(null)}
+                            style={{ padding: '3px 10px', background: '#eee', color: '#666', border: 'none', borderRadius: 3, fontSize: 11, cursor: 'pointer' }}>Cancel</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: '#1a1a1a' }}>{s.title}</div>
+                          {s.description && <div style={{ fontSize: 11, color: '#666', marginTop: 2 }}>{s.description}</div>}
+                          {s.confidence != null && <span style={{ fontSize: 10, color: '#999' }}>{Math.round(s.confidence * 100)}% confidence</span>}
+                        </div>
+                        <button onClick={() => addSuggestionAsPriority(s)} title="Add as priority"
+                          style={{ padding: '3px 10px', background: '#e8f5e9', color: '#2e7d32', border: '1px solid #c8e6c9', borderRadius: 3, fontSize: 11, cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}>+ Add</button>
+                        <button onClick={() => startEditSuggestion(idx)} title="Edit before adding"
+                          style={{ padding: '3px 10px', background: '#fff3e0', color: '#e65100', border: '1px solid #ffe0b2', borderRadius: 3, fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap' }}>Edit & Add</button>
+                        <button onClick={() => setWorkbenchSuggestions(prev => prev.filter((_, i) => i !== idx))} title="Dismiss"
+                          style={{ padding: '3px 8px', background: '#fafafa', color: '#999', border: '1px solid #eee', borderRadius: 3, fontSize: 11, cursor: 'pointer' }}>✕</button>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Add/Edit Form */}
+        {addingPriority && (
+          <div style={{ background: '#fafaf8', border: '1px solid #e0e0e0', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12, color: '#1a1a1a' }}>{editingPriorityId ? 'Edit Priority' : 'New Priority'}</div>
+            <input value={priorityForm.title} onChange={e => setPriorityForm(f => ({ ...f, title: e.target.value }))} placeholder="Priority title…"
+              style={{ width: '100%', padding: '8px 10px', fontSize: 13, border: '1px solid #d0d0d0', borderRadius: 5, marginBottom: 10, fontFamily: 'inherit', boxSizing: 'border-box' }} />
+
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ display: 'flex', gap: 2, marginBottom: 4, borderBottom: '1px solid #e0e0e0', paddingBottom: 4 }}>
+                {toolbarBtn('bold', 'B')}{toolbarBtn('italic', 'I')}{toolbarBtn('underline', 'U')}{toolbarBtn('strikeThrough', 'S')}
+                {toolbarBtn('insertUnorderedList', '• List')}{toolbarBtn('insertOrderedList', '1. List')}
+              </div>
+              <div ref={priorityEditorRef} contentEditable className="rtf-editor" data-placeholder="Description (optional)…"
+                style={{ minHeight: 80, maxHeight: 200, overflowY: 'auto', padding: 8, border: '1px solid #d0d0d0', borderRadius: 5, fontSize: 12, fontFamily: 'inherit', background: '#fff', outline: 'none' }} />
+            </div>
+
+            <div style={{ marginBottom: 10 }}>
+              <span style={{ fontSize: 11, color: '#666', marginRight: 8 }}>Status:</span>
+              {['pending', 'ongoing', 'completed'].map(st => {
+                const sc = statusColors[st];
+                const active = priorityForm.status === st;
+                return <button key={st} onClick={() => setPriorityForm(f => ({ ...f, status: st }))}
+                  style={{ padding: '3px 12px', marginRight: 4, borderRadius: 12, fontSize: 11, fontWeight: 600, background: active ? sc.bg : '#f5f5f5', color: active ? sc.color : '#999', border: `1px solid ${active ? sc.color : '#ddd'}`, cursor: 'pointer' }}>{sc.label}</button>;
+              })}
+            </div>
+
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 11, color: '#666', marginBottom: 4 }}>Links:</div>
+              {priorityForm.links.map((l, i) => (
+                <div key={i} style={{ display: 'flex', gap: 4, marginBottom: 3 }}>
+                  <a href={l} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: '#1565c0', flex: 1, wordBreak: 'break-all' }}>{l}</a>
+                  <button onClick={() => setPriorityForm(f => ({ ...f, links: f.links.filter((_, j) => j !== i) }))}
+                    style={{ background: 'none', border: 'none', color: '#c62828', cursor: 'pointer', fontSize: 12, padding: '0 4px' }}>✕</button>
+                </div>
+              ))}
+              <div style={{ display: 'flex', gap: 4 }}>
+                <input value={priorityNewLink} onChange={e => setPriorityNewLink(e.target.value)} placeholder="https://..." onKeyDown={e => { if (e.key === 'Enter' && priorityNewLink.trim()) { setPriorityForm(f => ({ ...f, links: [...f.links, priorityNewLink.trim()] })); setPriorityNewLink(''); } }}
+                  style={{ flex: 1, padding: '4px 8px', fontSize: 11, border: '1px solid #d0d0d0', borderRadius: 3, fontFamily: 'inherit' }} />
+                <button onClick={() => { if (priorityNewLink.trim()) { setPriorityForm(f => ({ ...f, links: [...f.links, priorityNewLink.trim()] })); setPriorityNewLink(''); } }}
+                  style={{ padding: '4px 10px', background: '#f5f5f5', border: '1px solid #d0d0d0', borderRadius: 3, fontSize: 11, cursor: 'pointer' }}>Add</button>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={editingPriorityId ? saveEditPriority : addPriority}
+                style={{ padding: '7px 18px', background: '#8b6914', color: '#fff', border: 'none', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                {editingPriorityId ? 'Save Changes' : 'Add Priority'}
+              </button>
+              <button onClick={() => { setAddingPriority(false); setEditingPriorityId(null); setPriorityForm({ title: '', description: '', status: 'pending', links: [] }); setPriorityNewLink(''); if (priorityEditorRef.current) priorityEditorRef.current.innerHTML = ''; }}
+                style={{ padding: '7px 18px', background: '#f5f5f5', color: '#666', border: '1px solid #d0d0d0', borderRadius: 5, fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+            </div>
+          </div>
+        )}
+
+        {/* Priority List */}
+        {entries.length === 0 && !addingPriority && (
+          <div style={{ textAlign: 'center', padding: '40px 20px', color: '#999' }}>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>📋</div>
+            <div style={{ fontSize: 14 }}>No priorities yet</div>
+            <div style={{ fontSize: 12, marginTop: 4 }}>Click "+ Add Priority" or use the AI Workbench to get started</div>
+          </div>
+        )}
+
+        {entries.map(entry => {
+          const sc = statusColors[entry.status] || statusColors.pending;
+          const isDragging = dragPriorityId === entry.id;
+          const isDragOver = dragOverPriorityId === entry.id;
+          return (
+            <div key={entry.id}
+              draggable={canDrag}
+              onDragStart={canDrag ? (e) => handlePriorityDragStart(e, entry.id) : undefined}
+              onDragOver={canDrag ? (e) => handlePriorityDragOver(e, entry.id) : undefined}
+              onDrop={canDrag ? (e) => handlePriorityDrop(e, entry.id) : undefined}
+              onDragEnd={canDrag ? handlePriorityDragEnd : undefined}
+              style={{
+                display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 14px',
+                background: isDragOver ? '#e3f2fd' : '#fff', border: `1px solid ${isDragOver ? '#90caf9' : '#e0e0e0'}`,
+                borderRadius: 8, marginBottom: 8, opacity: isDragging ? 0.5 : 1,
+                transition: 'all 0.15s', cursor: canDrag ? 'grab' : 'default'
+              }}>
+              {canDrag && <span style={{ color: '#ccc', fontSize: 16, cursor: 'grab', userSelect: 'none', lineHeight: 1.2 }} title="Drag to reorder">⠿</span>}
+              <span style={{ display: 'inline-block', minWidth: 48, padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", background: '#f5e6c8', color: '#8b6914', textAlign: 'center' }}>{entry.num}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                  {statusPill(entry.status, () => togglePriorityStatus(entry.id))}
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>{entry.title}</span>
+                </div>
+                {entry.description && entry.description.replace(/<[^>]*>/g, '').trim() && (
+                  <div className="comment-html" dangerouslySetInnerHTML={{ __html: entry.description }} style={{ fontSize: 12, color: '#555', marginBottom: 4 }} />
+                )}
+                {(entry.links || []).length > 0 && (
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
+                    {entry.links.map((l, i) => <a key={i} href={l} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: '#1565c0', wordBreak: 'break-all' }}>{l.length > 60 ? l.slice(0, 57) + '…' : l}</a>)}
+                  </div>
+                )}
+                <div style={{ fontSize: 10, color: '#aaa', marginTop: 4 }}>{entry.author} — {new Date(entry.time).toLocaleDateString()}</div>
+              </div>
+              <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                <button onClick={() => startEditPriority(entry)} title="Edit" style={{ padding: '3px 8px', background: '#f5f5f5', border: '1px solid #e0e0e0', borderRadius: 3, fontSize: 11, cursor: 'pointer', color: '#666' }}>✎</button>
+                <button onClick={() => { if (window.confirm('Delete this priority?')) deletePriority(entry.id); }} title="Delete" style={{ padding: '3px 8px', background: '#fff5f5', border: '1px solid #ffcdd2', borderRadius: 3, fontSize: 11, cursor: 'pointer', color: '#c62828' }}>🗑</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   if (!loaded) return <div style={{ background: '#fff', color: '#888', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Georgia, serif', fontSize: 18 }}>Loading Coryphaeus Spec…</div>;
 
   return (
@@ -1505,22 +1977,26 @@ export default function App() {
             </label>
           </div>
           <div style={{ flex: 1, overflowY: 'auto', padding: '6px 0' }}>
-            <button className={`sidebar-btn ${showSummary && !showCompetitors && !showEntities ? 'active' : ''}`} onClick={() => { setShowCompetitors(false); setShowEntities(false); setShowSummary(true); setCameFromEntities(null); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
+            <button className={`sidebar-btn ${showSummary && !showCompetitors && !showEntities && !showPriorities ? 'active' : ''}`} onClick={() => { setShowCompetitors(false); setShowEntities(false); setShowPriorities(false); setShowSummary(true); setCameFromEntities(null); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
               <span style={{ flex: 1 }}>💬 Comments Summary</span>
               {totalComments > 0 && <span style={{ fontSize: 10, background: '#e8f0fc', color: '#4a7cc9', padding: '1px 5px', borderRadius: 3 }}>{totalComments}</span>}
             </button>
-            <button className={`sidebar-btn ${showCompetitors ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowEntities(false); setShowCompetitors(true); setCameFromEntities(null); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
+            <button className={`sidebar-btn ${showCompetitors ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowEntities(false); setShowPriorities(false); setShowCompetitors(true); setCameFromEntities(null); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
               <span style={{ flex: 1 }}>🎯 Competitors</span>
               {competitorData.length > 0 && <span style={{ fontSize: 10, background: '#fce4ec', color: '#c62828', padding: '1px 5px', borderRadius: 3 }}>{competitorData.length}</span>}
             </button>
-            <button className={`sidebar-btn ${showEntities ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowCompetitors(false); setShowEntities(true); setCameFromEntities(null); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
+            <button className={`sidebar-btn ${showEntities ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowCompetitors(false); setShowPriorities(false); setShowEntities(true); setCameFromEntities(null); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
               <span style={{ flex: 1 }}>🗃️ Entities</span>
               <span style={{ fontSize: 10, background: '#e8eaf6', color: '#3949ab', padding: '1px 5px', borderRadius: 3 }}>{ENTITIES.length}</span>
+            </button>
+            <button className={`sidebar-btn ${showPriorities ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowCompetitors(false); setShowEntities(false); setShowPriorities(true); setCameFromEntities(null); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
+              <span style={{ flex: 1 }}>📋 Priorities</span>
+              {prioritiesData.length > 0 && <span style={{ fontSize: 10, background: '#fff3e0', color: '#e65100', padding: '1px 5px', borderRadius: 3 }}>{prioritiesData.length}</span>}
             </button>
             {filteredSections.map(([s, realIdx]) => {
               const cmtCount = sectionCommentCount(realIdx);
               return (
-                <button key={s[0]} className={`sidebar-btn ${realIdx === activeSection && !showSummary && !showCompetitors && !showEntities ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowCompetitors(false); setShowEntities(false); setCameFromEntities(null); setActiveSection(realIdx); }}>
+                <button key={s[0]} className={`sidebar-btn ${realIdx === activeSection && !showSummary && !showCompetitors && !showEntities && !showPriorities ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowCompetitors(false); setShowEntities(false); setShowPriorities(false); setCameFromEntities(null); setActiveSection(realIdx); }}>
                   <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s[1]}</span>
                   <span style={{ display: 'flex', gap: 4 }}>
                     {s[2] > 0 && showChanges && <span style={{ fontSize: 10, background: '#f5e6c8', color: '#8b6914', padding: '1px 5px', borderRadius: 3, fontFamily: 'monospace' }}>{s[2]}</span>}
@@ -1537,16 +2013,19 @@ export default function App() {
         <div style={{ padding: '10px 20px', borderBottom: '1px solid #e0e0e0', display: 'flex', alignItems: 'center', gap: 12, background: '#f8f8f6', minHeight: 44 }}>
           {!sidebarOpen && <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 16 }}>▶</button>}
           <div style={{ flex: 1 }}>
-            <span style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 18, color: '#1a1a1a' }}>{showEntities ? '🗃️ Data Model Entities' : showCompetitors ? '🎯 Competitors Intel' : showSummary ? 'Comments Summary' : section[1]}</span>
-            <span style={{ fontSize: 11, color: '#999', marginLeft: 10 }}>{showEntities ? '48 entities (v3.1)' : showCompetitors ? 'All competitors' : showSummary ? 'All sections' : `${section[0]}.md`}</span>
+            <span style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 18, color: '#1a1a1a' }}>{showPriorities ? '📋 Priorities' : showEntities ? '🗃️ Data Model Entities' : showCompetitors ? '🎯 Competitors Intel' : showSummary ? 'Comments Summary' : section[1]}</span>
+            <span style={{ fontSize: 11, color: '#999', marginLeft: 10 }}>{showPriorities ? 'Ranked priority list' : showEntities ? '48 entities (v3.1)' : showCompetitors ? 'All competitors' : showSummary ? 'All sections' : `${section[0]}.md`}</span>
           </div>
+          {showPriorities && <span style={{ fontSize: 11, color: '#999' }}>{prioritiesData.length} priorities</span>}
           {showEntities && <span style={{ fontSize: 11, color: '#999' }}>{ENTITIES.length} entities</span>}
           {showCompetitors && <span style={{ fontSize: 11, color: '#999' }}>{competitorData.length} entries</span>}
-          {!showSummary && !showCompetitors && !showEntities && <span style={{ fontSize: 11, color: '#999' }}>{section[3].length} items</span>}
-          {!showSummary && !showCompetitors && !showEntities && section[2] > 0 && showChanges && <span className="badge-v31">{section[2]} v3.1</span>}
+          {!showSummary && !showCompetitors && !showEntities && !showPriorities && <span style={{ fontSize: 11, color: '#999' }}>{section[3].length} items</span>}
+          {!showSummary && !showCompetitors && !showEntities && !showPriorities && section[2] > 0 && showChanges && <span className="badge-v31">{section[2]} v3.1</span>}
         </div>
         <div ref={contentRef} style={{ flex: 1, overflowY: 'auto', padding: '16px 24px 80px' }}>
-          {showEntities ? (
+          {showPriorities ? (
+            <div style={{ animation: 'fadeIn 0.2s ease' }}>{renderPrioritiesView()}</div>
+          ) : showEntities ? (
             <div style={{ animation: 'fadeIn 0.2s ease' }}>{renderEntitiesView()}</div>
           ) : showCompetitors ? (
             <div style={{ animation: 'fadeIn 0.2s ease' }}>{renderCompetitorsView()}</div>
@@ -1556,7 +2035,7 @@ export default function App() {
             <div style={{ maxWidth: 800, margin: '0 auto', animation: 'fadeIn 0.2s ease' }}>
               {cameFromEntities && (
                 <button onClick={() => {
-                  setShowEntities(true); setShowSummary(false); setShowCompetitors(false);
+                  setShowEntities(true); setShowSummary(false); setShowCompetitors(false); setShowPriorities(false);
                   if (Array.isArray(cameFromEntities)) setSelectedEntity(cameFromEntities);
                   setCameFromEntities(null);
                   setTimeout(() => contentRef.current?.scrollTo(0, 0), 50);
@@ -1569,7 +2048,18 @@ export default function App() {
           )}
         </div>
         <div style={{ padding: '8px 20px', borderTop: '1px solid #e0e0e0', background: '#f8f8f6', display: 'flex', alignItems: 'center', gap: 16, fontSize: 11, color: '#888' }}>
-          {showEntities ? (
+          {showPriorities ? (
+            <>
+              <span style={{ color: '#e65100' }}>📋 {prioritiesData.length} priorities</span>
+              <span>•</span>
+              <span>{prioritiesData.filter(e => e.status === 'completed').length} completed</span>
+              <span>•</span>
+              <span style={{ color: '#1565c0' }}>{prioritiesData.filter(e => e.status === 'ongoing').length} ongoing</span>
+              <span>•</span>
+              <span style={{ color: '#e65100' }}>{prioritiesData.filter(e => e.status === 'pending').length} pending</span>
+              {saving && <span style={{ color: '#4caf50' }}>● Saving…</span>}
+            </>
+          ) : showEntities ? (
             <>
               <span style={{ color: '#3949ab' }}>🗃️ {ENTITIES.length} entities</span>
               <span>•</span>

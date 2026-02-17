@@ -1,4 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { ReactFlow, Background, Controls, MiniMap, Handle, Position, useNodesState, useEdgesState, addEdge } from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
 
 // ── Spec Data (v3.1) ──────────────────────────────────────────────────
 const S = [
@@ -323,6 +325,47 @@ const ENTITIES = [
   ["Monthly Revenue Projection",5,19,"3.1","New v3.1"],["Partner Contribution",5,22,"3.1","New v3.1"],
 ];
 
+// ── Org Chart Constants ──
+const SENTIMENT_COLORS = {
+  champion: { color: '#2e7d32', bg: '#e8f5e9', label: 'Champion' },
+  supporter: { color: '#1565c0', bg: '#e3f2fd', label: 'Supporter' },
+  neutral: { color: '#616161', bg: '#f5f5f5', label: 'Neutral' },
+  detractor: { color: '#e65100', bg: '#fff3e0', label: 'Detractor' },
+  blocker: { color: '#c62828', bg: '#fce4ec', label: 'Blocker' },
+};
+
+const EDGE_RELATIONS = {
+  reportsTo: { label: 'Reports To', style: { stroke: '#666' } },
+  influences: { label: 'Influences', style: { stroke: '#1565c0', strokeDasharray: '5,5' } },
+  blocks: { label: 'Blocks', style: { stroke: '#c62828', strokeDasharray: '3,3' } },
+  champions: { label: 'Champions', style: { stroke: '#2e7d32', strokeDasharray: '5,5' } },
+};
+
+const ORGCHART_API = "/api/orgchart";
+
+// ── PersonNode (React Flow custom node) ──
+function PersonNode({ data, selected }) {
+  const s = SENTIMENT_COLORS[data.sentiment] || SENTIMENT_COLORS.neutral;
+  return (
+    <div style={{
+      padding: '10px 14px', background: '#fff', border: `2px solid ${selected ? '#8b6914' : s.color}`,
+      borderRadius: 8, minWidth: 140, boxShadow: selected ? '0 0 0 2px #8b691444' : '0 2px 8px rgba(0,0,0,0.08)',
+      fontFamily: 'inherit', position: 'relative',
+    }}>
+      <Handle type="target" position={Position.Top} style={{ background: '#999', width: 8, height: 8 }} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+        <span style={{ width: 10, height: 10, borderRadius: '50%', background: s.color, flexShrink: 0 }} />
+        <span style={{ fontWeight: 600, fontSize: 13, color: '#1a1a1a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{data.name || 'New Person'}</span>
+      </div>
+      {data.title && <div style={{ fontSize: 11, color: '#666', marginLeft: 16, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{data.title}</div>}
+      {data.department && <div style={{ fontSize: 10, color: '#999', marginLeft: 16, marginTop: 2 }}>{data.department}</div>}
+      <Handle type="source" position={Position.Bottom} style={{ background: '#999', width: 8, height: 8 }} />
+    </div>
+  );
+}
+
+const NODE_TYPES = { person: PersonNode };
+
 // ── API helpers (Azure Table Storage backed) ──
 const API_BASE = "/api/comments";
 
@@ -367,6 +410,29 @@ async function compApiSave(data) {
   try { localStorage.setItem("coryphaeus-competitors", JSON.stringify(data)); } catch {}
   try {
     const r = await fetch(COMP_API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+    if (!r.ok) throw new Error(r.statusText);
+  } catch {}
+}
+
+const ORGCHART_EMPTY = { nodes: [], edges: [], views: [{ id: 'all', name: 'All', filter: null }] };
+
+async function orgchartApiGet() {
+  try {
+    const r = await fetch(ORGCHART_API);
+    if (!r.ok) throw new Error(r.statusText);
+    const data = await r.json();
+    if (data && (data.nodes?.length > 0 || data.edges?.length > 0)) return data;
+    try { const local = JSON.parse(localStorage.getItem("coryphaeus-orgchart") || "null"); if (local?.nodes?.length > 0) return local; } catch {}
+    return data;
+  } catch {
+    try { return JSON.parse(localStorage.getItem("coryphaeus-orgchart") || "null") || ORGCHART_EMPTY; } catch { return ORGCHART_EMPTY; }
+  }
+}
+
+async function orgchartApiSave(data) {
+  try { localStorage.setItem("coryphaeus-orgchart", JSON.stringify(data)); } catch {}
+  try {
+    const r = await fetch(ORGCHART_API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
     if (!r.ok) throw new Error(r.statusText);
   } catch {}
 }
@@ -427,6 +493,14 @@ export default function App() {
   const [compVideo, setCompVideo] = useState(null);
   const [editingIntelId, setEditingIntelId] = useState(null);
   const [mediaModal, setMediaModal] = useState(null); // { items: [{type,src,name}], index: 0 }
+  const [showOrgChart, setShowOrgChart] = useState(() => window.location.hash === '#orgchart');
+  const [orgNodes, setOrgNodes, onOrgNodesChange] = useNodesState([]);
+  const [orgEdges, setOrgEdges, onOrgEdgesChange] = useEdgesState([]);
+  const [orgchartViews, setOrgchartViews] = useState([{ id: 'all', name: 'All', filter: null }]);
+  const [selectedOrgView, setSelectedOrgView] = useState('all');
+  const [editingPerson, setEditingPerson] = useState(null);
+  const [newEdgeType, setNewEdgeType] = useState('reportsTo');
+  const orgSaveTimerRef = useRef(null);
   const [showEntities, setShowEntities] = useState(() => window.location.hash === '#entities');
   const [entitySearch, setEntitySearch] = useState('');
   const [selectedEntity, setSelectedEntity] = useState(null); // entity tuple or null
@@ -479,18 +553,24 @@ export default function App() {
       if (needsSave) apiSave(c);
     });
     compApiGet().then(data => setCompetitorData(Array.isArray(data) ? data : []));
+    orgchartApiGet().then(data => {
+      if (data?.nodes) setOrgNodes(data.nodes.map(n => ({ ...n, type: 'person' })));
+      if (data?.edges) setOrgEdges(data.edges);
+      if (data?.views?.length > 0) setOrgchartViews(data.views);
+    });
   }, []);
 
   useEffect(() => {
+    if (showOrgChart) { window.location.hash = 'orgchart'; return; }
     if (showEntities) { window.location.hash = 'entities'; return; }
     if (showCompetitors) { window.location.hash = 'competitors'; return; }
     contentRef.current?.scrollTo(0, 0);
     window.location.hash = S[activeSection][0];
-  }, [activeSection, showCompetitors, showEntities]);
+  }, [activeSection, showCompetitors, showEntities, showOrgChart]);
 
   const navigateToEntity = useCallback((secIdx, itemIdx, entity) => {
     setCameFromEntities(entity || true);
-    setShowEntities(false); setShowSummary(false); setShowCompetitors(false);
+    setShowEntities(false); setShowSummary(false); setShowCompetitors(false); setShowOrgChart(false);
     setActiveSection(secIdx);
     setTimeout(() => {
       const el = document.getElementById(`spec-item-${itemIdx}`);
@@ -789,6 +869,161 @@ export default function App() {
     setSaving(false);
   }, [editingIntelId, intelForm, competitorData, attachments, audioData, compVideo]);
 
+  // ── Org Chart helpers ──
+  const orgchartSave = useCallback((nodes, edges, views) => {
+    clearTimeout(orgSaveTimerRef.current);
+    orgSaveTimerRef.current = setTimeout(() => {
+      setSaving(true);
+      orgchartApiSave({ nodes, edges, views: views || orgchartViews }).then(() => setSaving(false));
+    }, 500);
+  }, [orgchartViews]);
+
+  const onOrgConnect = useCallback((params) => {
+    const rel = newEdgeType;
+    const style = EDGE_RELATIONS[rel]?.style || {};
+    const edge = {
+      ...params,
+      id: `e-${params.source}-${params.target}-${Date.now()}`,
+      type: 'smoothstep',
+      data: { relation: rel },
+      style,
+      label: EDGE_RELATIONS[rel]?.label || rel,
+      labelStyle: { fontSize: 10, fill: '#888' },
+      labelBgStyle: { fill: '#fff', fillOpacity: 0.8 },
+    };
+    setOrgEdges(eds => {
+      const next = addEdge(edge, eds);
+      orgchartSave(orgNodes, next);
+      return next;
+    });
+  }, [newEdgeType, orgNodes, orgchartSave, setOrgEdges]);
+
+  const onOrgNodeDragStop = useCallback((_, node) => {
+    setOrgNodes(nds => {
+      const next = nds.map(n => n.id === node.id ? { ...n, position: node.position } : n);
+      orgchartSave(next, orgEdges);
+      return next;
+    });
+  }, [orgEdges, orgchartSave, setOrgNodes]);
+
+  const addOrgPerson = useCallback(() => {
+    const id = `p${Date.now()}`;
+    const newNode = {
+      id, type: 'person',
+      position: { x: 200 + Math.random() * 200, y: 100 + Math.random() * 200 },
+      data: { name: 'New Person', title: '', sentiment: 'neutral', department: '', notes: '' },
+    };
+    setOrgNodes(nds => {
+      const next = [...nds, newNode];
+      orgchartSave(next, orgEdges);
+      return next;
+    });
+    setEditingPerson(id);
+  }, [orgEdges, orgchartSave, setOrgNodes]);
+
+  const updateOrgPerson = useCallback((id, updates) => {
+    setOrgNodes(nds => {
+      const next = nds.map(n => n.id === id ? { ...n, data: { ...n.data, ...updates } } : n);
+      orgchartSave(next, orgEdges);
+      return next;
+    });
+  }, [orgEdges, orgchartSave, setOrgNodes]);
+
+  const deleteOrgPerson = useCallback((id) => {
+    setOrgNodes(nds => {
+      const next = nds.filter(n => n.id !== id);
+      setOrgEdges(eds => {
+        const nextEdges = eds.filter(e => e.source !== id && e.target !== id);
+        orgchartSave(next, nextEdges);
+        return nextEdges;
+      });
+      return next;
+    });
+    setEditingPerson(null);
+  }, [orgchartSave, setOrgNodes, setOrgEdges]);
+
+  const deleteOrgEdge = useCallback((id) => {
+    setOrgEdges(eds => {
+      const next = eds.filter(e => e.id !== id);
+      orgchartSave(orgNodes, next);
+      return next;
+    });
+  }, [orgNodes, orgchartSave, setOrgEdges]);
+
+  const autoLayoutOrg = useCallback(() => {
+    if (orgNodes.length === 0) return;
+    // Build adjacency from reportsTo edges
+    const children = {};
+    const hasParent = new Set();
+    orgEdges.forEach(e => {
+      if (e.data?.relation === 'reportsTo') {
+        if (!children[e.target]) children[e.target] = [];
+        children[e.target].push(e.source);
+        hasParent.add(e.source);
+      }
+    });
+    const roots = orgNodes.filter(n => !hasParent.has(n.id)).map(n => n.id);
+    if (roots.length === 0) roots.push(orgNodes[0].id);
+
+    const positions = {};
+    const XGAP = 180, YGAP = 120;
+    let globalX = 0;
+
+    const layoutTree = (nodeId, depth) => {
+      const kids = children[nodeId] || [];
+      if (kids.length === 0) {
+        positions[nodeId] = { x: globalX, y: depth * YGAP };
+        globalX += XGAP;
+        return;
+      }
+      kids.forEach(kid => layoutTree(kid, depth + 1));
+      const firstKid = positions[kids[0]];
+      const lastKid = positions[kids[kids.length - 1]];
+      positions[nodeId] = { x: (firstKid.x + lastKid.x) / 2, y: depth * YGAP };
+    };
+
+    roots.forEach(r => { layoutTree(r, 0); globalX += XGAP / 2; });
+    // Place orphans (nodes not reached)
+    orgNodes.forEach(n => {
+      if (!positions[n.id]) {
+        positions[n.id] = { x: globalX, y: 0 };
+        globalX += XGAP;
+      }
+    });
+
+    setOrgNodes(nds => {
+      const next = nds.map(n => positions[n.id] ? { ...n, position: positions[n.id] } : n);
+      orgchartSave(next, orgEdges);
+      return next;
+    });
+  }, [orgNodes, orgEdges, orgchartSave, setOrgNodes]);
+
+  const onOrgNodeClick = useCallback((_, node) => {
+    setEditingPerson(node.id);
+  }, []);
+
+  const onOrgPaneClick = useCallback(() => {
+    setEditingPerson(null);
+  }, []);
+
+  // Filter nodes/edges by selected view
+  const filteredOrgNodes = useMemo(() => {
+    const view = orgchartViews.find(v => v.id === selectedOrgView);
+    if (!view?.filter?.departments?.length) return orgNodes;
+    return orgNodes.filter(n => view.filter.departments.includes(n.data.department));
+  }, [orgNodes, orgchartViews, selectedOrgView]);
+
+  const filteredOrgEdges = useMemo(() => {
+    const nodeIds = new Set(filteredOrgNodes.map(n => n.id));
+    return orgEdges.filter(e => nodeIds.has(e.source) && nodeIds.has(e.target));
+  }, [orgEdges, filteredOrgNodes]);
+
+  const orgDepartments = useMemo(() => {
+    const deps = new Set();
+    orgNodes.forEach(n => { if (n.data.department) deps.add(n.data.department); });
+    return [...deps].sort();
+  }, [orgNodes]);
+
   useEffect(() => {
     if (commentingOn && inputRef.current) inputRef.current.focus();
   }, [commentingOn]);
@@ -828,8 +1063,8 @@ export default function App() {
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e) => {
-      if (e.key === 'ArrowRight' && !commentingOn) { setShowSummary(false); setShowCompetitors(false); setShowEntities(false); setActiveSection(s => Math.min(S.length - 1, s + 1)); }
-      if (e.key === 'ArrowLeft' && !commentingOn) { setShowSummary(false); setShowCompetitors(false); setShowEntities(false); setActiveSection(s => Math.max(0, s - 1)); }
+      if (e.key === 'ArrowRight' && !commentingOn && !showOrgChart) { setShowSummary(false); setShowCompetitors(false); setShowEntities(false); setShowOrgChart(false); setActiveSection(s => Math.min(S.length - 1, s + 1)); }
+      if (e.key === 'ArrowLeft' && !commentingOn && !showOrgChart) { setShowSummary(false); setShowCompetitors(false); setShowEntities(false); setShowOrgChart(false); setActiveSection(s => Math.max(0, s - 1)); }
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); document.querySelector('#search-input')?.focus(); }
     };
     window.addEventListener('keydown', handler);
@@ -1452,6 +1687,132 @@ export default function App() {
     );
   };
 
+  const renderOrgChartView = () => {
+    const editNode = editingPerson ? orgNodes.find(n => n.id === editingPerson) : null;
+    return (
+      <div style={{ display: 'flex', height: '100%' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+          {/* Toolbar */}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 12px', borderBottom: '1px solid #e0e0e0', flexWrap: 'wrap', background: '#fafaf8' }}>
+            <button onClick={addOrgPerson} style={{ padding: '6px 12px', background: '#8b6914', color: '#fff', border: 'none', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>+ Add Person</button>
+            <select value={selectedOrgView} onChange={e => {
+              const val = e.target.value;
+              setSelectedOrgView(val);
+              // Auto-create view for department filter
+              if (val.startsWith('dept-') && !orgchartViews.some(v => v.id === val)) {
+                const dept = val.replace('dept-', '');
+                setOrgchartViews(vs => [...vs, { id: val, name: `${dept} only`, filter: { departments: [dept] } }]);
+              }
+            }} style={{ padding: '5px 8px', fontSize: 11, background: '#fff', border: '1px solid #d0d0d0', borderRadius: 4, fontFamily: 'inherit' }}>
+              {orgchartViews.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+              {orgDepartments.filter(d => !orgchartViews.some(v => v.id === `dept-${d}`)).map(d => (
+                <option key={`dept-${d}`} value={`dept-${d}`}>{d} only</option>
+              ))}
+            </select>
+            <select value={newEdgeType} onChange={e => setNewEdgeType(e.target.value)} style={{ padding: '5px 8px', fontSize: 11, background: '#fff', border: '1px solid #d0d0d0', borderRadius: 4, fontFamily: 'inherit' }}>
+              {Object.entries(EDGE_RELATIONS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+            </select>
+            <button onClick={autoLayoutOrg} style={{ padding: '5px 10px', background: '#fff', border: '1px solid #d0d0d0', borderRadius: 4, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', color: '#555' }}>Auto Layout</button>
+            <span style={{ flex: 1 }} />
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              {Object.entries(SENTIMENT_COLORS).map(([k, v]) => (
+                <span key={k} style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 10, color: '#888' }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: v.color }} />
+                  {v.label}
+                </span>
+              ))}
+            </div>
+          </div>
+          {/* React Flow Canvas */}
+          <div style={{ flex: 1 }}>
+            <ReactFlow
+              nodes={filteredOrgNodes}
+              edges={filteredOrgEdges}
+              onNodesChange={onOrgNodesChange}
+              onEdgesChange={onOrgEdgesChange}
+              onConnect={onOrgConnect}
+              onNodeClick={onOrgNodeClick}
+              onPaneClick={onOrgPaneClick}
+              onNodeDragStop={onOrgNodeDragStop}
+              nodeTypes={NODE_TYPES}
+              fitView
+              fitViewOptions={{ padding: 0.3 }}
+              deleteKeyCode="Delete"
+              onEdgesDelete={(edges) => edges.forEach(e => deleteOrgEdge(e.id))}
+            >
+              <Background gap={20} size={1} color="#e8e8e8" />
+              <Controls showInteractive={false} style={{ bottom: 40 }} />
+              <MiniMap nodeColor={(n) => SENTIMENT_COLORS[n.data?.sentiment]?.color || '#999'} style={{ border: '1px solid #e0e0e0' }} />
+            </ReactFlow>
+          </div>
+        </div>
+        {/* Edit Panel */}
+        {editNode && (
+          <div style={{ width: 280, minWidth: 280, borderLeft: '1px solid #e0e0e0', background: '#fafaf8', padding: 16, overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <span style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 16, color: '#1a1a1a' }}>Edit Person</span>
+              <button onClick={() => setEditingPerson(null)} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 14 }}>✕</button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div>
+                <label style={{ fontSize: 11, color: '#888', display: 'block', marginBottom: 3 }}>Name</label>
+                <input value={editNode.data.name} onChange={e => updateOrgPerson(editNode.id, { name: e.target.value })} style={{ width: '100%', padding: '6px 8px', fontSize: 12, border: '1px solid #d0d0d0', borderRadius: 4, fontFamily: 'inherit', boxSizing: 'border-box' }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: '#888', display: 'block', marginBottom: 3 }}>Title</label>
+                <input value={editNode.data.title || ''} onChange={e => updateOrgPerson(editNode.id, { title: e.target.value })} style={{ width: '100%', padding: '6px 8px', fontSize: 12, border: '1px solid #d0d0d0', borderRadius: 4, fontFamily: 'inherit', boxSizing: 'border-box' }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: '#888', display: 'block', marginBottom: 3 }}>Sentiment</label>
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                  {Object.entries(SENTIMENT_COLORS).map(([k, v]) => (
+                    <button key={k} onClick={() => updateOrgPerson(editNode.id, { sentiment: k })} style={{
+                      padding: '4px 10px', fontSize: 11, borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit',
+                      border: editNode.data.sentiment === k ? `2px solid ${v.color}` : '1px solid #d0d0d0',
+                      background: editNode.data.sentiment === k ? v.bg : '#fff',
+                      color: editNode.data.sentiment === k ? v.color : '#666',
+                      fontWeight: editNode.data.sentiment === k ? 600 : 400,
+                    }}>{v.label}</button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: '#888', display: 'block', marginBottom: 3 }}>Department</label>
+                <input value={editNode.data.department || ''} onChange={e => updateOrgPerson(editNode.id, { department: e.target.value })} list="org-departments" style={{ width: '100%', padding: '6px 8px', fontSize: 12, border: '1px solid #d0d0d0', borderRadius: 4, fontFamily: 'inherit', boxSizing: 'border-box' }} />
+                <datalist id="org-departments">{orgDepartments.map(d => <option key={d} value={d} />)}</datalist>
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: '#888', display: 'block', marginBottom: 3 }}>Notes</label>
+                <textarea value={editNode.data.notes || ''} onChange={e => updateOrgPerson(editNode.id, { notes: e.target.value })} rows={3} style={{ width: '100%', padding: '6px 8px', fontSize: 12, border: '1px solid #d0d0d0', borderRadius: 4, fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box' }} />
+              </div>
+              {/* Connections for this person */}
+              <div>
+                <label style={{ fontSize: 11, color: '#888', display: 'block', marginBottom: 3 }}>Connections</label>
+                {orgEdges.filter(e => e.source === editNode.id || e.target === editNode.id).map(e => {
+                  const otherId = e.source === editNode.id ? e.target : e.source;
+                  const other = orgNodes.find(n => n.id === otherId);
+                  const dir = e.source === editNode.id ? '→' : '←';
+                  return (
+                    <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, marginBottom: 4, padding: '3px 6px', background: '#fff', borderRadius: 4, border: '1px solid #e8e8e8' }}>
+                      <span style={{ color: '#888' }}>{dir}</span>
+                      <span style={{ flex: 1, color: '#1a1a1a' }}>{other?.data.name || otherId}</span>
+                      <span style={{ fontSize: 9, color: '#888' }}>{EDGE_RELATIONS[e.data?.relation]?.label || e.data?.relation}</span>
+                      <button onClick={() => deleteOrgEdge(e.id)} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 10, padding: '0 2px' }}>✕</button>
+                    </div>
+                  );
+                })}
+                {orgEdges.filter(e => e.source === editNode.id || e.target === editNode.id).length === 0 && (
+                  <div style={{ fontSize: 11, color: '#bbb', fontStyle: 'italic' }}>No connections. Drag from handle to connect.</div>
+                )}
+              </div>
+              <button onClick={() => deleteOrgPerson(editNode.id)} style={{ marginTop: 8, padding: '7px 14px', background: '#fce4ec', color: '#c62828', border: '1px solid #f8bbd0', borderRadius: 5, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Delete Person</button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   if (!loaded) return <div style={{ background: '#fff', color: '#888', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Georgia, serif', fontSize: 18 }}>Loading Coryphaeus Spec…</div>;
 
   return (
@@ -1505,22 +1866,26 @@ export default function App() {
             </label>
           </div>
           <div style={{ flex: 1, overflowY: 'auto', padding: '6px 0' }}>
-            <button className={`sidebar-btn ${showSummary && !showCompetitors && !showEntities ? 'active' : ''}`} onClick={() => { setShowCompetitors(false); setShowEntities(false); setShowSummary(true); setCameFromEntities(null); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
+            <button className={`sidebar-btn ${showSummary && !showCompetitors && !showEntities && !showOrgChart ? 'active' : ''}`} onClick={() => { setShowCompetitors(false); setShowEntities(false); setShowOrgChart(false); setShowSummary(true); setCameFromEntities(null); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
               <span style={{ flex: 1 }}>💬 Comments Summary</span>
               {totalComments > 0 && <span style={{ fontSize: 10, background: '#e8f0fc', color: '#4a7cc9', padding: '1px 5px', borderRadius: 3 }}>{totalComments}</span>}
             </button>
-            <button className={`sidebar-btn ${showCompetitors ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowEntities(false); setShowCompetitors(true); setCameFromEntities(null); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
+            <button className={`sidebar-btn ${showCompetitors ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowEntities(false); setShowOrgChart(false); setShowCompetitors(true); setCameFromEntities(null); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
               <span style={{ flex: 1 }}>🎯 Competitors</span>
               {competitorData.length > 0 && <span style={{ fontSize: 10, background: '#fce4ec', color: '#c62828', padding: '1px 5px', borderRadius: 3 }}>{competitorData.length}</span>}
             </button>
-            <button className={`sidebar-btn ${showEntities ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowCompetitors(false); setShowEntities(true); setCameFromEntities(null); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
+            <button className={`sidebar-btn ${showEntities && !showOrgChart ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowCompetitors(false); setShowOrgChart(false); setShowEntities(true); setCameFromEntities(null); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
               <span style={{ flex: 1 }}>🗃️ Entities</span>
               <span style={{ fontSize: 10, background: '#e8eaf6', color: '#3949ab', padding: '1px 5px', borderRadius: 3 }}>{ENTITIES.length}</span>
+            </button>
+            <button className={`sidebar-btn ${showOrgChart ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowCompetitors(false); setShowEntities(false); setShowOrgChart(true); setCameFromEntities(null); setEditingPerson(null); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
+              <span style={{ flex: 1 }}>🏢 Org Chart</span>
+              {orgNodes.length > 0 && <span style={{ fontSize: 10, background: '#e8f5e9', color: '#2e7d32', padding: '1px 5px', borderRadius: 3 }}>{orgNodes.length}</span>}
             </button>
             {filteredSections.map(([s, realIdx]) => {
               const cmtCount = sectionCommentCount(realIdx);
               return (
-                <button key={s[0]} className={`sidebar-btn ${realIdx === activeSection && !showSummary && !showCompetitors && !showEntities ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowCompetitors(false); setShowEntities(false); setCameFromEntities(null); setActiveSection(realIdx); }}>
+                <button key={s[0]} className={`sidebar-btn ${realIdx === activeSection && !showSummary && !showCompetitors && !showEntities && !showOrgChart ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowCompetitors(false); setShowEntities(false); setShowOrgChart(false); setCameFromEntities(null); setActiveSection(realIdx); }}>
                   <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s[1]}</span>
                   <span style={{ display: 'flex', gap: 4 }}>
                     {s[2] > 0 && showChanges && <span style={{ fontSize: 10, background: '#f5e6c8', color: '#8b6914', padding: '1px 5px', borderRadius: 3, fontFamily: 'monospace' }}>{s[2]}</span>}
@@ -1537,16 +1902,19 @@ export default function App() {
         <div style={{ padding: '10px 20px', borderBottom: '1px solid #e0e0e0', display: 'flex', alignItems: 'center', gap: 12, background: '#f8f8f6', minHeight: 44 }}>
           {!sidebarOpen && <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 16 }}>▶</button>}
           <div style={{ flex: 1 }}>
-            <span style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 18, color: '#1a1a1a' }}>{showEntities ? '🗃️ Data Model Entities' : showCompetitors ? '🎯 Competitors Intel' : showSummary ? 'Comments Summary' : section[1]}</span>
-            <span style={{ fontSize: 11, color: '#999', marginLeft: 10 }}>{showEntities ? '48 entities (v3.1)' : showCompetitors ? 'All competitors' : showSummary ? 'All sections' : `${section[0]}.md`}</span>
+            <span style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 18, color: '#1a1a1a' }}>{showOrgChart ? '🏢 Org Chart' : showEntities ? '🗃️ Data Model Entities' : showCompetitors ? '🎯 Competitors Intel' : showSummary ? 'Comments Summary' : section[1]}</span>
+            <span style={{ fontSize: 11, color: '#999', marginLeft: 10 }}>{showOrgChart ? 'Relationship mapping' : showEntities ? '48 entities (v3.1)' : showCompetitors ? 'All competitors' : showSummary ? 'All sections' : `${section[0]}.md`}</span>
           </div>
-          {showEntities && <span style={{ fontSize: 11, color: '#999' }}>{ENTITIES.length} entities</span>}
+          {showOrgChart && <span style={{ fontSize: 11, color: '#999' }}>{orgNodes.length} people</span>}
+          {showEntities && !showOrgChart && <span style={{ fontSize: 11, color: '#999' }}>{ENTITIES.length} entities</span>}
           {showCompetitors && <span style={{ fontSize: 11, color: '#999' }}>{competitorData.length} entries</span>}
-          {!showSummary && !showCompetitors && !showEntities && <span style={{ fontSize: 11, color: '#999' }}>{section[3].length} items</span>}
-          {!showSummary && !showCompetitors && !showEntities && section[2] > 0 && showChanges && <span className="badge-v31">{section[2]} v3.1</span>}
+          {!showSummary && !showCompetitors && !showEntities && !showOrgChart && <span style={{ fontSize: 11, color: '#999' }}>{section[3].length} items</span>}
+          {!showSummary && !showCompetitors && !showEntities && !showOrgChart && section[2] > 0 && showChanges && <span className="badge-v31">{section[2]} v3.1</span>}
         </div>
-        <div ref={contentRef} style={{ flex: 1, overflowY: 'auto', padding: '16px 24px 80px' }}>
-          {showEntities ? (
+        <div ref={contentRef} style={{ flex: 1, overflowY: showOrgChart ? 'hidden' : 'auto', padding: showOrgChart ? 0 : '16px 24px 80px' }}>
+          {showOrgChart ? (
+            <div style={{ height: '100%' }}>{renderOrgChartView()}</div>
+          ) : showEntities ? (
             <div style={{ animation: 'fadeIn 0.2s ease' }}>{renderEntitiesView()}</div>
           ) : showCompetitors ? (
             <div style={{ animation: 'fadeIn 0.2s ease' }}>{renderCompetitorsView()}</div>
@@ -1556,7 +1924,7 @@ export default function App() {
             <div style={{ maxWidth: 800, margin: '0 auto', animation: 'fadeIn 0.2s ease' }}>
               {cameFromEntities && (
                 <button onClick={() => {
-                  setShowEntities(true); setShowSummary(false); setShowCompetitors(false);
+                  setShowEntities(true); setShowSummary(false); setShowCompetitors(false); setShowOrgChart(false);
                   if (Array.isArray(cameFromEntities)) setSelectedEntity(cameFromEntities);
                   setCameFromEntities(null);
                   setTimeout(() => contentRef.current?.scrollTo(0, 0), 50);
@@ -1569,7 +1937,18 @@ export default function App() {
           )}
         </div>
         <div style={{ padding: '8px 20px', borderTop: '1px solid #e0e0e0', background: '#f8f8f6', display: 'flex', alignItems: 'center', gap: 16, fontSize: 11, color: '#888' }}>
-          {showEntities ? (
+          {showOrgChart ? (
+            <>
+              <span style={{ color: '#2e7d32' }}>🏢 {orgNodes.length} people</span>
+              <span>•</span>
+              <span>{orgEdges.length} connections</span>
+              <span>•</span>
+              <span>{orgDepartments.length} departments</span>
+              <span>•</span>
+              <span>Drag handles to connect • Click to edit</span>
+              {saving && <span style={{ color: '#4caf50' }}>● Saving…</span>}
+            </>
+          ) : showEntities ? (
             <>
               <span style={{ color: '#3949ab' }}>🗃️ {ENTITIES.length} entities</span>
               <span>•</span>

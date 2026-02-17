@@ -2350,13 +2350,13 @@ export default function App() {
               <span style={{ flex: 1 }}>🗃️ Entities</span>
               <span style={{ fontSize: 10, background: '#e8eaf6', color: '#3949ab', padding: '1px 5px', borderRadius: 3 }}>{ENTITIES.length}</span>
             </button>
-            <button className={`sidebar-btn ${showPriorities ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowCompetitors(false); setShowEntities(false); setShowOrgChart(false); setShowPriorities(true); setCameFromEntities(null); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
-              <span style={{ flex: 1 }}>📋 Priorities</span>
-              {prioritiesData.length > 0 && <span style={{ fontSize: 10, background: '#fff3e0', color: '#e65100', padding: '1px 5px', borderRadius: 3 }}>{prioritiesData.length}</span>}
-            </button>
             <button className={`sidebar-btn ${showOrgChart ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowCompetitors(false); setShowEntities(false); setShowPriorities(false); setShowOrgChart(true); setCameFromEntities(null); setEditingPerson(null); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
               <span style={{ flex: 1 }}>🏢 Org Chart</span>
               {orgNodes.length > 0 && <span style={{ fontSize: 10, background: '#e8f5e9', color: '#2e7d32', padding: '1px 5px', borderRadius: 3 }}>{orgNodes.length}</span>}
+            </button>
+            <button className={`sidebar-btn ${showPriorities ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowCompetitors(false); setShowEntities(false); setShowOrgChart(false); setShowPriorities(true); setCameFromEntities(null); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
+              <span style={{ flex: 1 }}>📋 Priorities</span>
+              {prioritiesData.length > 0 && <span style={{ fontSize: 10, background: '#fff3e0', color: '#e65100', padding: '1px 5px', borderRadius: 3 }}>{prioritiesData.length}</span>}
             </button>
             {filteredSections.map(([s, realIdx]) => {
               const cmtCount = sectionCommentCount(realIdx);

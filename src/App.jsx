@@ -290,6 +290,8 @@ const VERSIONS = [
   { id: "2.0", date: "Feb 2026", label: "v2.0 — Original", changes: 0, desc: "Original spec with 27 entities, 6 differentiators" },
 ];
 
+const DEFAULT_CATEGORIES = ['Sales', 'Service', 'Marketing'];
+
 const COMPETITORS_LIST = ["Close", "Copper", "Dynamics 365", "Freshsales", "HubSpot", "Monday CRM", "Pipedrive", "Salesforce", "Zoho", "Other"];
 const FEATURES_LIST = ["Account Planning", "AI Agents", "AI Safety", "Contact Center", "Data Model", "General", "Integrations", "Marketing", "MCP Apps", "Mobile", "Pricing", "Reporting", "Security", "Workflow"];
 
@@ -532,9 +534,10 @@ export default function App() {
   const [prioritiesData, setPrioritiesData] = useState([]);
   const [prioritySearch, setPrioritySearch] = useState('');
   const [priorityStatusFilter, setPriorityStatusFilter] = useState('');
+  const [priorityViewMode, setPriorityViewMode] = useState('rank');
   const [addingPriority, setAddingPriority] = useState(false);
   const [editingPriorityId, setEditingPriorityId] = useState(null);
-  const [priorityForm, setPriorityForm] = useState({ title: '', description: '', status: 'pending', links: [] });
+  const [priorityForm, setPriorityForm] = useState({ title: '', description: '', status: 'pending', category: '', links: [] });
   const [priorityNewLink, setPriorityNewLink] = useState('');
   const [showWorkbench, setShowWorkbench] = useState(false);
   const [workbenchText, setWorkbenchText] = useState('');
@@ -543,7 +546,7 @@ export default function App() {
   const [workbenchProcessing, setWorkbenchProcessing] = useState(false);
   const [workbenchError, setWorkbenchError] = useState('');
   const [editingSuggestionIdx, setEditingSuggestionIdx] = useState(null);
-  const [editingSuggestionForm, setEditingSuggestionForm] = useState({ title: '', description: '' });
+  const [editingSuggestionForm, setEditingSuggestionForm] = useState({ title: '', description: '', category: '' });
   const [dragPriorityId, setDragPriorityId] = useState(null);
   const [dragOverPriorityId, setDragOverPriorityId] = useState(null);
   const [modalRect, setModalRect] = useState({ x: 80, y: 40, w: 0, h: 0 }); // 0 = auto
@@ -914,6 +917,12 @@ export default function App() {
   }, [editingIntelId, intelForm, competitorData, attachments, audioData, compVideo]);
 
   // ── Priorities CRUD + DnD ──
+  const availableCategories = useMemo(() => {
+    const fromData = prioritiesData.map(e => e.category).filter(Boolean);
+    const merged = new Set([...DEFAULT_CATEGORIES, ...fromData]);
+    return [...merged].sort();
+  }, [prioritiesData]);
+
   const nextPriorityNum = useCallback(() => {
     let max = 0;
     prioritiesData.forEach(e => { const n = parseInt((e.num || '').replace('P-', ''), 10); if (n > max) max = n; });
@@ -928,6 +937,7 @@ export default function App() {
       title: priorityForm.title.trim(),
       description: html,
       status: priorityForm.status || 'pending',
+      category: priorityForm.category || '',
       links: priorityForm.links.filter(l => l.trim()),
       rank: prioritiesData.length + 1,
       author: commentAuthor.trim() || 'Reviewer',
@@ -936,7 +946,7 @@ export default function App() {
     const newData = [...prioritiesData, entry];
     setPrioritiesData(newData);
     setAddingPriority(false);
-    setPriorityForm({ title: '', description: '', status: 'pending', links: [] });
+    setPriorityForm({ title: '', description: '', status: 'pending', category: '', links: [] });
     setPriorityNewLink('');
     if (priorityEditorRef.current) priorityEditorRef.current.innerHTML = '';
     setSaving(true);
@@ -968,6 +978,7 @@ export default function App() {
       title: entry.title || '',
       description: entry.description || '',
       status: entry.status || 'pending',
+      category: entry.category || '',
       links: entry.links || []
     });
     setPriorityNewLink('');
@@ -978,12 +989,12 @@ export default function App() {
     const html = priorityEditorRef.current ? priorityEditorRef.current.innerHTML : '';
     const newData = prioritiesData.map(e => {
       if (e.id !== editingPriorityId) return e;
-      return { ...e, title: priorityForm.title.trim(), description: html, status: priorityForm.status, links: priorityForm.links.filter(l => l.trim()) };
+      return { ...e, title: priorityForm.title.trim(), description: html, status: priorityForm.status, category: priorityForm.category || '', links: priorityForm.links.filter(l => l.trim()) };
     });
     setPrioritiesData(newData);
     setEditingPriorityId(null);
     setAddingPriority(false);
-    setPriorityForm({ title: '', description: '', status: 'pending', links: [] });
+    setPriorityForm({ title: '', description: '', status: 'pending', category: '', links: [] });
     setPriorityNewLink('');
     if (priorityEditorRef.current) priorityEditorRef.current.innerHTML = '';
     setSaving(true);
@@ -1030,7 +1041,7 @@ export default function App() {
     try {
       const r = await fetch('/api/workbench', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'transcript', content: workbenchText })
+        body: JSON.stringify({ type: 'transcript', content: workbenchText, categories: availableCategories })
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const data = await r.json();
@@ -1057,7 +1068,7 @@ export default function App() {
       if (suggestions.length === 0) setWorkbenchError('No actionable priorities found. Try pasting text with action items, bullet points, or numbered lists.');
     }
     setWorkbenchProcessing(false);
-  }, [workbenchText]);
+  }, [workbenchText, availableCategories]);
 
   const processWorkbenchUrl = useCallback(async () => {
     if (!workbenchUrl.trim()) return;
@@ -1066,7 +1077,7 @@ export default function App() {
     try {
       const r = await fetch('/api/workbench', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'url', content: workbenchUrl })
+        body: JSON.stringify({ type: 'url', content: workbenchUrl, categories: availableCategories })
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const data = await r.json();
@@ -1077,7 +1088,7 @@ export default function App() {
       setWorkbenchError(`Failed to analyze URL: ${e.message}`);
     }
     setWorkbenchProcessing(false);
-  }, [workbenchUrl]);
+  }, [workbenchUrl, availableCategories]);
 
   const addSuggestionAsPriority = useCallback(async (suggestion) => {
     const entry = {
@@ -1085,6 +1096,7 @@ export default function App() {
       title: suggestion.title,
       description: suggestion.description || '',
       status: 'pending',
+      category: suggestion.category || '',
       links: [],
       rank: prioritiesData.length + 1,
       author: commentAuthor.trim() || 'Reviewer',
@@ -1100,12 +1112,12 @@ export default function App() {
 
   const startEditSuggestion = useCallback((idx) => {
     setEditingSuggestionIdx(idx);
-    setEditingSuggestionForm({ title: workbenchSuggestions[idx].title, description: workbenchSuggestions[idx].description || '' });
+    setEditingSuggestionForm({ title: workbenchSuggestions[idx].title, description: workbenchSuggestions[idx].description || '', category: workbenchSuggestions[idx].category || '' });
   }, [workbenchSuggestions]);
 
   const saveAndAddEditedSuggestion = useCallback(async () => {
     if (editingSuggestionIdx === null) return;
-    const edited = { ...workbenchSuggestions[editingSuggestionIdx], title: editingSuggestionForm.title, description: editingSuggestionForm.description };
+    const edited = { ...workbenchSuggestions[editingSuggestionIdx], title: editingSuggestionForm.title, description: editingSuggestionForm.description, category: editingSuggestionForm.category };
     setEditingSuggestionIdx(null);
     await addSuggestionAsPriority(edited);
   }, [editingSuggestionIdx, editingSuggestionForm, workbenchSuggestions, addSuggestionAsPriority]);
@@ -2069,10 +2081,11 @@ export default function App() {
         (e.title || '').toLowerCase().includes(q) ||
         (e.description || '').replace(/<[^>]*>/g, '').toLowerCase().includes(q) ||
         (e.num || '').toLowerCase().includes(q) ||
+        (e.category || '').toLowerCase().includes(q) ||
         (e.links || []).some(l => l.toLowerCase().includes(q))
       );
     }
-    const canDrag = !priorityStatusFilter && !prioritySearch;
+    const canDrag = !priorityStatusFilter && !prioritySearch && priorityViewMode === 'rank';
 
     const toolbarBtn = (cmd, label) => (
       <button key={cmd} title={cmd} onMouseDown={e => { e.preventDefault(); document.execCommand(cmd, false, null); }}
@@ -2088,7 +2101,7 @@ export default function App() {
       <div style={{ maxWidth: 900, margin: '0 auto' }}>
         {/* Toolbar */}
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
-          <button onClick={() => { setEditingPriorityId(null); setAddingPriority(true); setPriorityForm({ title: '', description: '', status: 'pending', links: [] }); setPriorityNewLink(''); setTimeout(() => { if (priorityEditorRef.current) priorityEditorRef.current.innerHTML = ''; }, 50); }}
+          <button onClick={() => { setEditingPriorityId(null); setAddingPriority(true); setPriorityForm({ title: '', description: '', status: 'pending', category: '', links: [] }); setPriorityNewLink(''); setTimeout(() => { if (priorityEditorRef.current) priorityEditorRef.current.innerHTML = ''; }, 50); }}
             style={{ padding: '7px 14px', background: '#8b6914', color: '#fff', border: 'none', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>+ Add Priority</button>
           <button onClick={() => setShowWorkbench(w => !w)}
             style={{ padding: '7px 14px', background: showWorkbench ? '#5c6bc0' : '#fff', color: showWorkbench ? '#fff' : '#5c6bc0', border: '1px solid #5c6bc0', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
@@ -2101,6 +2114,14 @@ export default function App() {
             <option value="ongoing">Ongoing</option>
             <option value="completed">Completed</option>
           </select>
+          <div style={{ display: 'inline-flex', borderRadius: 5, overflow: 'hidden', border: '1px solid #d0d0d0' }}>
+            {['rank', 'category'].map(mode => (
+              <button key={mode} onClick={() => setPriorityViewMode(mode)}
+                style={{ padding: '5px 12px', fontSize: 11, fontWeight: 600, border: 'none', cursor: 'pointer', background: priorityViewMode === mode ? '#8b6914' : '#fff', color: priorityViewMode === mode ? '#fff' : '#666', transition: 'all 0.15s' }}>
+                {mode === 'rank' ? 'Rank' : 'Category'}
+              </button>
+            ))}
+          </div>
           <input value={prioritySearch} onChange={e => setPrioritySearch(e.target.value)} placeholder="Search priorities…"
             style={{ padding: '6px 10px', fontSize: 12, background: '#fff', border: '1px solid #d0d0d0', borderRadius: 4, fontFamily: 'inherit', flex: 1, minWidth: 120 }} />
         </div>
@@ -2148,6 +2169,11 @@ export default function App() {
                           style={{ width: '100%', padding: '4px 6px', fontSize: 12, border: '1px solid #d0d0d0', borderRadius: 3, marginBottom: 4, fontFamily: 'inherit', boxSizing: 'border-box' }} />
                         <input value={editingSuggestionForm.description} onChange={e => setEditingSuggestionForm(f => ({ ...f, description: e.target.value }))} placeholder="Description (optional)"
                           style={{ width: '100%', padding: '4px 6px', fontSize: 11, border: '1px solid #d0d0d0', borderRadius: 3, marginBottom: 4, fontFamily: 'inherit', boxSizing: 'border-box' }} />
+                        <input list="suggestion-categories" value={editingSuggestionForm.category} onChange={e => setEditingSuggestionForm(f => ({ ...f, category: e.target.value }))} placeholder="Category (optional)"
+                          style={{ width: '100%', padding: '4px 6px', fontSize: 11, border: '1px solid #d0d0d0', borderRadius: 3, marginBottom: 4, fontFamily: 'inherit', boxSizing: 'border-box' }} />
+                        <datalist id="suggestion-categories">
+                          {availableCategories.map(c => <option key={c} value={c} />)}
+                        </datalist>
                         <div style={{ display: 'flex', gap: 4 }}>
                           <button onClick={saveAndAddEditedSuggestion}
                             style={{ padding: '3px 10px', background: '#2e7d32', color: '#fff', border: 'none', borderRadius: 3, fontSize: 11, cursor: 'pointer' }}>Save & Add</button>
@@ -2160,7 +2186,10 @@ export default function App() {
                         <div style={{ flex: 1 }}>
                           <div style={{ fontSize: 12, fontWeight: 600, color: '#1a1a1a' }}>{s.title}</div>
                           {s.description && <div style={{ fontSize: 11, color: '#666', marginTop: 2 }}>{s.description}</div>}
-                          {s.confidence != null && <span style={{ fontSize: 10, color: '#999' }}>{Math.round(s.confidence * 100)}% confidence</span>}
+                          <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 2 }}>
+                            {s.category && <span style={{ display: 'inline-block', padding: '1px 6px', borderRadius: 8, fontSize: 9, fontWeight: 600, background: '#ede7f6', color: '#6a1b9a' }}>{s.category}</span>}
+                            {s.confidence != null && <span style={{ fontSize: 10, color: '#999' }}>{Math.round(s.confidence * 100)}% confidence</span>}
+                          </div>
                         </div>
                         <button onClick={() => addSuggestionAsPriority(s)} title="Add as priority"
                           style={{ padding: '3px 10px', background: '#e8f5e9', color: '#2e7d32', border: '1px solid #c8e6c9', borderRadius: 3, fontSize: 11, cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}>+ Add</button>
@@ -2204,6 +2233,15 @@ export default function App() {
             </div>
 
             <div style={{ marginBottom: 10 }}>
+              <span style={{ fontSize: 11, color: '#666', marginRight: 8 }}>Category:</span>
+              <input list="priority-categories" value={priorityForm.category} onChange={e => setPriorityForm(f => ({ ...f, category: e.target.value }))} placeholder="Select or type category…"
+                style={{ padding: '4px 8px', fontSize: 11, border: '1px solid #d0d0d0', borderRadius: 4, fontFamily: 'inherit', minWidth: 160 }} />
+              <datalist id="priority-categories">
+                {availableCategories.map(c => <option key={c} value={c} />)}
+              </datalist>
+            </div>
+
+            <div style={{ marginBottom: 10 }}>
               <div style={{ fontSize: 11, color: '#666', marginBottom: 4 }}>Links:</div>
               {priorityForm.links.map((l, i) => (
                 <div key={i} style={{ display: 'flex', gap: 4, marginBottom: 3 }}>
@@ -2225,7 +2263,7 @@ export default function App() {
                 style={{ padding: '7px 18px', background: '#8b6914', color: '#fff', border: 'none', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
                 {editingPriorityId ? 'Save Changes' : 'Add Priority'}
               </button>
-              <button onClick={() => { setAddingPriority(false); setEditingPriorityId(null); setPriorityForm({ title: '', description: '', status: 'pending', links: [] }); setPriorityNewLink(''); if (priorityEditorRef.current) priorityEditorRef.current.innerHTML = ''; }}
+              <button onClick={() => { setAddingPriority(false); setEditingPriorityId(null); setPriorityForm({ title: '', description: '', status: 'pending', category: '', links: [] }); setPriorityNewLink(''); if (priorityEditorRef.current) priorityEditorRef.current.innerHTML = ''; }}
                 style={{ padding: '7px 18px', background: '#f5f5f5', color: '#666', border: '1px solid #d0d0d0', borderRadius: 5, fontSize: 12, cursor: 'pointer' }}>Cancel</button>
             </div>
           </div>
@@ -2240,47 +2278,74 @@ export default function App() {
           </div>
         )}
 
-        {entries.map(entry => {
-          const sc = statusColors[entry.status] || statusColors.pending;
-          const isDragging = dragPriorityId === entry.id;
-          const isDragOver = dragOverPriorityId === entry.id;
-          return (
-            <div key={entry.id}
-              draggable={canDrag}
-              onDragStart={canDrag ? (e) => handlePriorityDragStart(e, entry.id) : undefined}
-              onDragOver={canDrag ? (e) => handlePriorityDragOver(e, entry.id) : undefined}
-              onDrop={canDrag ? (e) => handlePriorityDrop(e, entry.id) : undefined}
-              onDragEnd={canDrag ? handlePriorityDragEnd : undefined}
-              style={{
-                display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 14px',
-                background: isDragOver ? '#e3f2fd' : '#fff', border: `1px solid ${isDragOver ? '#90caf9' : '#e0e0e0'}`,
-                borderRadius: 8, marginBottom: 8, opacity: isDragging ? 0.5 : 1,
-                transition: 'all 0.15s', cursor: canDrag ? 'grab' : 'default'
-              }}>
-              {canDrag && <span style={{ color: '#ccc', fontSize: 16, cursor: 'grab', userSelect: 'none', lineHeight: 1.2 }} title="Drag to reorder">⠿</span>}
-              <span style={{ display: 'inline-block', minWidth: 48, padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", background: '#f5e6c8', color: '#8b6914', textAlign: 'center' }}>{entry.num}</span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                  {statusPill(entry.status, () => togglePriorityStatus(entry.id))}
-                  <span style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>{entry.title}</span>
-                </div>
-                {entry.description && entry.description.replace(/<[^>]*>/g, '').trim() && (
-                  <div className="comment-html" dangerouslySetInnerHTML={{ __html: entry.description }} style={{ fontSize: 12, color: '#555', marginBottom: 4 }} />
-                )}
-                {(entry.links || []).length > 0 && (
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
-                    {entry.links.map((l, i) => <a key={i} href={l} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: '#1565c0', wordBreak: 'break-all' }}>{l.length > 60 ? l.slice(0, 57) + '…' : l}</a>)}
+        {(() => {
+          const renderCard = (entry) => {
+            const isDragging = dragPriorityId === entry.id;
+            const isDragOver = dragOverPriorityId === entry.id;
+            return (
+              <div key={entry.id}
+                draggable={canDrag}
+                onDragStart={canDrag ? (e) => handlePriorityDragStart(e, entry.id) : undefined}
+                onDragOver={canDrag ? (e) => handlePriorityDragOver(e, entry.id) : undefined}
+                onDrop={canDrag ? (e) => handlePriorityDrop(e, entry.id) : undefined}
+                onDragEnd={canDrag ? handlePriorityDragEnd : undefined}
+                style={{
+                  display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 14px',
+                  background: isDragOver ? '#e3f2fd' : '#fff', border: `1px solid ${isDragOver ? '#90caf9' : '#e0e0e0'}`,
+                  borderRadius: 8, marginBottom: 8, opacity: isDragging ? 0.5 : 1,
+                  transition: 'all 0.15s', cursor: canDrag ? 'grab' : 'default'
+                }}>
+                {canDrag && <span style={{ color: '#ccc', fontSize: 16, cursor: 'grab', userSelect: 'none', lineHeight: 1.2 }} title="Drag to reorder">⠿</span>}
+                <span style={{ display: 'inline-block', minWidth: 48, padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", background: '#f5e6c8', color: '#8b6914', textAlign: 'center' }}>{entry.num}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                    {statusPill(entry.status, () => togglePriorityStatus(entry.id))}
+                    {entry.category && <span style={{ display: 'inline-block', padding: '1px 8px', borderRadius: 10, fontSize: 10, fontWeight: 600, background: '#ede7f6', color: '#6a1b9a' }}>{entry.category}</span>}
+                    <span style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>{entry.title}</span>
                   </div>
-                )}
-                <div style={{ fontSize: 10, color: '#aaa', marginTop: 4 }}>{entry.author} — {new Date(entry.time).toLocaleDateString()}</div>
+                  {entry.description && entry.description.replace(/<[^>]*>/g, '').trim() && (
+                    <div className="comment-html" dangerouslySetInnerHTML={{ __html: entry.description }} style={{ fontSize: 12, color: '#555', marginBottom: 4 }} />
+                  )}
+                  {(entry.links || []).length > 0 && (
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
+                      {entry.links.map((l, i) => <a key={i} href={l} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: '#1565c0', wordBreak: 'break-all' }}>{l.length > 60 ? l.slice(0, 57) + '…' : l}</a>)}
+                    </div>
+                  )}
+                  <div style={{ fontSize: 10, color: '#aaa', marginTop: 4 }}>{entry.author} — {new Date(entry.time).toLocaleDateString()}</div>
+                </div>
+                <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                  <button onClick={() => startEditPriority(entry)} title="Edit" style={{ padding: '3px 8px', background: '#f5f5f5', border: '1px solid #e0e0e0', borderRadius: 3, fontSize: 11, cursor: 'pointer', color: '#666' }}>✎</button>
+                  <button onClick={() => { if (window.confirm('Delete this priority?')) deletePriority(entry.id); }} title="Delete" style={{ padding: '3px 8px', background: '#fff5f5', border: '1px solid #ffcdd2', borderRadius: 3, fontSize: 11, cursor: 'pointer', color: '#c62828' }}>🗑</button>
+                </div>
               </div>
-              <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                <button onClick={() => startEditPriority(entry)} title="Edit" style={{ padding: '3px 8px', background: '#f5f5f5', border: '1px solid #e0e0e0', borderRadius: 3, fontSize: 11, cursor: 'pointer', color: '#666' }}>✎</button>
-                <button onClick={() => { if (window.confirm('Delete this priority?')) deletePriority(entry.id); }} title="Delete" style={{ padding: '3px 8px', background: '#fff5f5', border: '1px solid #ffcdd2', borderRadius: 3, fontSize: 11, cursor: 'pointer', color: '#c62828' }}>🗑</button>
+            );
+          };
+
+          if (priorityViewMode === 'category') {
+            const groups = {};
+            entries.forEach(e => {
+              const cat = e.category || 'Uncategorized';
+              if (!groups[cat]) groups[cat] = [];
+              groups[cat].push(e);
+            });
+            const sortedKeys = Object.keys(groups).sort((a, b) => {
+              if (a === 'Uncategorized') return 1;
+              if (b === 'Uncategorized') return -1;
+              return a.localeCompare(b);
+            });
+            return sortedKeys.map(cat => (
+              <div key={cat} style={{ marginBottom: 20 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, paddingBottom: 6, borderBottom: '1px solid #e0e0e0' }}>
+                  <span style={{ display: 'inline-block', padding: '3px 12px', borderRadius: 12, fontSize: 12, fontWeight: 600, background: cat === 'Uncategorized' ? '#f5f5f5' : '#ede7f6', color: cat === 'Uncategorized' ? '#999' : '#6a1b9a' }}>{cat}</span>
+                  <span style={{ fontSize: 11, color: '#999', background: '#f5f5f5', padding: '1px 8px', borderRadius: 10 }}>{groups[cat].length}</span>
+                </div>
+                {groups[cat].map(renderCard)}
               </div>
-            </div>
-          );
-        })}
+            ));
+          }
+
+          return entries.map(renderCard);
+        })()}
       </div>
     );
   };
@@ -2379,7 +2444,7 @@ export default function App() {
           {!sidebarOpen && <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 16 }}>▶</button>}
           <div style={{ flex: 1 }}>
             <span style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 18, color: '#1a1a1a' }}>{showPriorities ? '📋 Priorities' : showOrgChart ? '🏢 Org Chart' : showEntities ? '🗃️ Data Model Entities' : showCompetitors ? '🎯 Competitors Intel' : showSummary ? 'Comments Summary' : section[1]}</span>
-            <span style={{ fontSize: 11, color: '#999', marginLeft: 10 }}>{showPriorities ? 'Ranked priority list' : showOrgChart ? 'Relationship mapping' : showEntities ? '48 entities (v3.1)' : showCompetitors ? 'All competitors' : showSummary ? 'All sections' : `${section[0]}.md`}</span>
+            <span style={{ fontSize: 11, color: '#999', marginLeft: 10 }}>{showPriorities ? (priorityViewMode === 'category' ? 'Grouped by category' : 'Ranked priority list') : showOrgChart ? 'Relationship mapping' : showEntities ? '48 entities (v3.1)' : showCompetitors ? 'All competitors' : showSummary ? 'All sections' : `${section[0]}.md`}</span>
           </div>
           {showPriorities && <span style={{ fontSize: 11, color: '#999' }}>{prioritiesData.length} priorities</span>}
           {showOrgChart && <span style={{ fontSize: 11, color: '#999' }}>{orgNodes.length} people</span>}

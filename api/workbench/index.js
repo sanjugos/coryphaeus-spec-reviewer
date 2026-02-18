@@ -74,19 +74,23 @@ function regexExtract(text) {
   }).slice(0, 15);
 }
 
-async function callClaude(text, type) {
+async function callClaude(text, type, categories) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return null;
 
+  const categoryInstruction = categories && categories.length > 0
+    ? `\n\nAvailable categories: ${categories.join(", ")}. Assign each suggestion a "category" field from this list (or leave empty if none fit).`
+    : `\n\nAlso assign each suggestion a "category" field (e.g. "Sales", "Service", "Marketing") or leave empty if unclear.`;
+
   const prompt = type === "transcript"
-    ? `Extract actionable priorities from this call transcript. Return JSON with a "suggestions" array where each item has "title" (concise action item, max 120 chars), "description" (1-2 sentence context), and "confidence" (0.0-1.0 how clearly this was stated as a priority).\n\nTranscript:\n${text.slice(0, 15000)}`
-    : `Extract actionable priorities from this webpage content. Return JSON with a "suggestions" array where each item has "title" (concise action item, max 120 chars), "description" (1-2 sentence context), and "confidence" (0.0-1.0 how relevant this is as a priority).\n\nContent:\n${text.slice(0, 15000)}`;
+    ? `Extract actionable priorities from this call transcript. Return JSON with a "suggestions" array where each item has "title" (concise action item, max 120 chars), "description" (1-2 sentence context), "confidence" (0.0-1.0 how clearly this was stated as a priority), and "category" (string).${categoryInstruction}\n\nTranscript:\n${text.slice(0, 15000)}`
+    : `Extract actionable priorities from this webpage content. Return JSON with a "suggestions" array where each item has "title" (concise action item, max 120 chars), "description" (1-2 sentence context), "confidence" (0.0-1.0 how relevant this is as a priority), and "category" (string).${categoryInstruction}\n\nContent:\n${text.slice(0, 15000)}`;
 
   const body = JSON.stringify({
     model: "claude-haiku-4-5-20251001",
     max_tokens: 2048,
     messages: [{ role: "user", content: prompt }],
-    system: "You extract priorities from text. Always respond with valid JSON only, no markdown fences. Format: { \"suggestions\": [{ \"title\": \"...\", \"description\": \"...\", \"confidence\": 0.8 }] }"
+    system: "You extract priorities from text. Always respond with valid JSON only, no markdown fences. Format: { \"suggestions\": [{ \"title\": \"...\", \"description\": \"...\", \"confidence\": 0.8, \"category\": \"...\" }] }"
   });
 
   return new Promise((resolve) => {
@@ -138,7 +142,7 @@ module.exports = async function (context, req) {
   }
 
   try {
-    const { type, content } = req.body || {};
+    const { type, content, categories } = req.body || {};
     if (!type || !content) {
       context.res = { status: 400, headers, body: JSON.stringify({ error: "type and content required" }) };
       return;
@@ -157,7 +161,7 @@ module.exports = async function (context, req) {
     }
 
     // Try Claude first, fall back to regex
-    let suggestions = await callClaude(text, type);
+    let suggestions = await callClaude(text, type, categories);
     let method = "ai";
 
     if (!suggestions) {

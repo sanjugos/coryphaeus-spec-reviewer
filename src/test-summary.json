@@ -1,0 +1,814 @@
+{
+  "date": "2026-02-19T14:06:39.079Z",
+  "duration": 218.8,
+  "total": 144,
+  "passed": 144,
+  "failed": 0,
+  "skipped": 0,
+  "suites": [
+    {
+      "name": "Sidebar Navigation",
+      "passed": 18,
+      "failed": 0,
+      "tests": [
+        {
+          "title": "app loads and shows CORYPHAEUS branding",
+          "status": "passed",
+          "duration": 2.3
+        },
+        {
+          "title": "sidebar shows all 19 spec sections",
+          "status": "passed",
+          "duration": 0.8
+        },
+        {
+          "title": "first spec section is active by default",
+          "status": "passed",
+          "duration": 0.8
+        },
+        {
+          "title": "clicking a section navigates to it",
+          "status": "passed",
+          "duration": 1.3
+        },
+        {
+          "title": "section content updates when navigating",
+          "status": "passed",
+          "duration": 1.2
+        },
+        {
+          "title": "hash updates when navigating sections",
+          "status": "passed",
+          "duration": 1.1
+        },
+        {
+          "title": "sidebar collapse button works",
+          "status": "passed",
+          "duration": 1
+        },
+        {
+          "title": "sidebar expand button appears after collapse",
+          "status": "passed",
+          "duration": 1.2
+        },
+        {
+          "title": "sidebar re-opens after collapse and expand",
+          "status": "passed",
+          "duration": 1.1
+        },
+        {
+          "title": "Prev button navigates to previous section",
+          "status": "passed",
+          "duration": 1.4
+        },
+        {
+          "title": "Next button navigates to next section",
+          "status": "passed",
+          "duration": 1
+        },
+        {
+          "title": "Prev button is disabled on first section",
+          "status": "passed",
+          "duration": 0.8
+        },
+        {
+          "title": "navigating to Comments Summary view works",
+          "status": "passed",
+          "duration": 1.2
+        },
+        {
+          "title": "navigating to Competitors view works",
+          "status": "passed",
+          "duration": 1.2
+        },
+        {
+          "title": "navigating to Entities view works",
+          "status": "passed",
+          "duration": 1
+        },
+        {
+          "title": "navigating to Org Chart view works",
+          "status": "passed",
+          "duration": 1.2
+        },
+        {
+          "title": "navigating to Priorities view works",
+          "status": "passed",
+          "duration": 1.4
+        },
+        {
+          "title": "sidebar shows comment count badge",
+          "status": "passed",
+          "duration": 0.8
+        }
+      ]
+    },
+    {
+      "name": "Search",
+      "passed": 10,
+      "failed": 0,
+      "tests": [
+        {
+          "title": "search input is visible in sidebar",
+          "status": "passed",
+          "duration": 0.8
+        },
+        {
+          "title": "global search filters sections",
+          "status": "passed",
+          "duration": 1.1
+        },
+        {
+          "title": "search clears properly",
+          "status": "passed",
+          "duration": 1.3
+        },
+        {
+          "title": "search with no results shows empty sidebar",
+          "status": "passed",
+          "duration": 1
+        },
+        {
+          "title": "entity search filters entities list",
+          "status": "passed",
+          "duration": 1.3
+        },
+        {
+          "title": "entity search with no results shows message",
+          "status": "passed",
+          "duration": 1.3
+        },
+        {
+          "title": "priority search filters priorities",
+          "status": "passed",
+          "duration": 1.4
+        },
+        {
+          "title": "priority search hides non-matching items",
+          "status": "passed",
+          "duration": 1.3
+        },
+        {
+          "title": "competitor search filters intel entries",
+          "status": "passed",
+          "duration": 1.3
+        },
+        {
+          "title": "competitor search with no results shows empty view",
+          "status": "passed",
+          "duration": 1.4
+        }
+      ]
+    },
+    {
+      "name": "Comments",
+      "passed": 13,
+      "failed": 0,
+      "tests": [
+        {
+          "title": "comment button appears on hover over spec item",
+          "status": "passed",
+          "duration": 0.9
+        },
+        {
+          "title": "clicking comment button opens comment form",
+          "status": "passed",
+          "duration": 1.2
+        },
+        {
+          "title": "comment form shows rich text editor",
+          "status": "passed",
+          "duration": 1.1
+        },
+        {
+          "title": "can type in comment author field",
+          "status": "passed",
+          "duration": 1
+        },
+        {
+          "title": "can add a comment with text",
+          "status": "passed",
+          "duration": 1.8
+        },
+        {
+          "title": "comment shows author name",
+          "status": "passed",
+          "duration": 0.7
+        },
+        {
+          "title": "comment shows number badge (C-001)",
+          "status": "passed",
+          "duration": 0.8
+        },
+        {
+          "title": "cancel button closes comment form",
+          "status": "passed",
+          "duration": 1.5
+        },
+        {
+          "title": "delete comment removes it",
+          "status": "passed",
+          "duration": 0.8
+        },
+        {
+          "title": "comments summary view shows all comments",
+          "status": "passed",
+          "duration": 1.1
+        },
+        {
+          "title": "summary view shows section navigation links",
+          "status": "passed",
+          "duration": 1.1
+        },
+        {
+          "title": "clicking section in summary navigates to it",
+          "status": "passed",
+          "duration": 1.4
+        },
+        {
+          "title": "comment form has formatting toolbar buttons",
+          "status": "passed",
+          "duration": 1.2
+        }
+      ]
+    },
+    {
+      "name": "Competitors Intel",
+      "passed": 16,
+      "failed": 0,
+      "tests": [
+        {
+          "title": "competitors view loads",
+          "status": "passed",
+          "duration": 1.1
+        },
+        {
+          "title": "shows pre-populated competitor intel",
+          "status": "passed",
+          "duration": 1.1
+        },
+        {
+          "title": "shows competitor name badge",
+          "status": "passed",
+          "duration": 1.2
+        },
+        {
+          "title": "shows feature tags on intel entries",
+          "status": "passed",
+          "duration": 1.1
+        },
+        {
+          "title": "shows intel number badge (I-001)",
+          "status": "passed",
+          "duration": 1.4
+        },
+        {
+          "title": "Add Intel button opens form",
+          "status": "passed",
+          "duration": 1.3
+        },
+        {
+          "title": "can create new competitor intel",
+          "status": "passed",
+          "duration": 2.1
+        },
+        {
+          "title": "cancel closes the add intel form",
+          "status": "passed",
+          "duration": 1.6
+        },
+        {
+          "title": "competitor filter dropdown works",
+          "status": "passed",
+          "duration": 1.5
+        },
+        {
+          "title": "competitor filter shows no results for unmatched competitor",
+          "status": "passed",
+          "duration": 1.3
+        },
+        {
+          "title": "feature filter works",
+          "status": "passed",
+          "duration": 1.4
+        },
+        {
+          "title": "search filters intel entries",
+          "status": "passed",
+          "duration": 1.4
+        },
+        {
+          "title": "edit button opens edit form",
+          "status": "passed",
+          "duration": 1.8
+        },
+        {
+          "title": "delete button removes intel entry",
+          "status": "passed",
+          "duration": 1.5
+        },
+        {
+          "title": "can add a URL link to intel",
+          "status": "passed",
+          "duration": 1.7
+        },
+        {
+          "title": "intel shows links",
+          "status": "passed",
+          "duration": 1.4
+        }
+      ]
+    },
+    {
+      "name": "Entities",
+      "passed": 12,
+      "failed": 0,
+      "tests": [
+        {
+          "title": "entities view loads with title",
+          "status": "passed",
+          "duration": 1.2
+        },
+        {
+          "title": "shows 48 entities count in header",
+          "status": "passed",
+          "duration": 1.1
+        },
+        {
+          "title": "shows Core entity category",
+          "status": "passed",
+          "duration": 1.3
+        },
+        {
+          "title": "shows New v3.0 entity category",
+          "status": "passed",
+          "duration": 1.7
+        },
+        {
+          "title": "shows New v3.1 entity category",
+          "status": "passed",
+          "duration": 1.4
+        },
+        {
+          "title": "shows individual entity buttons",
+          "status": "passed",
+          "duration": 1.6
+        },
+        {
+          "title": "search filters entities",
+          "status": "passed",
+          "duration": 1.6
+        },
+        {
+          "title": "clicking an entity opens detail view",
+          "status": "passed",
+          "duration": 1.7
+        },
+        {
+          "title": "entity detail shows spec content",
+          "status": "passed",
+          "duration": 1.8
+        },
+        {
+          "title": "back button returns to entity list",
+          "status": "passed",
+          "duration": 2.2
+        },
+        {
+          "title": "entity detail shows section navigation link",
+          "status": "passed",
+          "duration": 1.7
+        },
+        {
+          "title": "entity categories show correct counts",
+          "status": "passed",
+          "duration": 2.2
+        }
+      ]
+    },
+    {
+      "name": "Org Chart",
+      "passed": 15,
+      "failed": 0,
+      "tests": [
+        {
+          "title": "org chart view loads",
+          "status": "passed",
+          "duration": 1.9
+        },
+        {
+          "title": "shows Add Person button",
+          "status": "passed",
+          "duration": 2.3
+        },
+        {
+          "title": "shows Auto Layout button",
+          "status": "passed",
+          "duration": 2.1
+        },
+        {
+          "title": "shows ReactFlow canvas",
+          "status": "passed",
+          "duration": 1.9
+        },
+        {
+          "title": "shows pre-populated person nodes",
+          "status": "passed",
+          "duration": 2
+        },
+        {
+          "title": "shows sentiment legend",
+          "status": "passed",
+          "duration": 2
+        },
+        {
+          "title": "Add Person creates a new node",
+          "status": "passed",
+          "duration": 2.5
+        },
+        {
+          "title": "clicking a node opens edit panel",
+          "status": "passed",
+          "duration": 2.2
+        },
+        {
+          "title": "edit panel shows name input",
+          "status": "passed",
+          "duration": 2.5
+        },
+        {
+          "title": "can edit person name",
+          "status": "passed",
+          "duration": 3.6
+        },
+        {
+          "title": "can change sentiment",
+          "status": "passed",
+          "duration": 3.5
+        },
+        {
+          "title": "can set department",
+          "status": "passed",
+          "duration": 2.4
+        },
+        {
+          "title": "delete person removes node",
+          "status": "passed",
+          "duration": 2.2
+        },
+        {
+          "title": "Auto Layout repositions nodes",
+          "status": "passed",
+          "duration": 1.8
+        },
+        {
+          "title": "edge type selector is available",
+          "status": "passed",
+          "duration": 1.2
+        }
+      ]
+    },
+    {
+      "name": "Priorities",
+      "passed": 17,
+      "failed": 0,
+      "tests": [
+        {
+          "title": "priorities view loads",
+          "status": "passed",
+          "duration": 1.2
+        },
+        {
+          "title": "shows pre-populated priorities",
+          "status": "passed",
+          "duration": 1.2
+        },
+        {
+          "title": "shows priority number badges",
+          "status": "passed",
+          "duration": 1.1
+        },
+        {
+          "title": "shows status pills",
+          "status": "passed",
+          "duration": 1.5
+        },
+        {
+          "title": "shows category badges",
+          "status": "passed",
+          "duration": 1.2
+        },
+        {
+          "title": "Add Priority button opens form",
+          "status": "passed",
+          "duration": 1.4
+        },
+        {
+          "title": "can create new priority",
+          "status": "passed",
+          "duration": 2.1
+        },
+        {
+          "title": "cancel closes the add priority form",
+          "status": "passed",
+          "duration": 1.5
+        },
+        {
+          "title": "clicking status pill toggles status",
+          "status": "passed",
+          "duration": 1.2
+        },
+        {
+          "title": "status filter works",
+          "status": "passed",
+          "duration": 1.4
+        },
+        {
+          "title": "search filters priorities",
+          "status": "passed",
+          "duration": 1.2
+        },
+        {
+          "title": "rank view shows drag handles",
+          "status": "passed",
+          "duration": 1.2
+        },
+        {
+          "title": "category view groups by category",
+          "status": "passed",
+          "duration": 1.4
+        },
+        {
+          "title": "switching between rank and category views",
+          "status": "passed",
+          "duration": 1.6
+        },
+        {
+          "title": "edit button opens edit form",
+          "status": "passed",
+          "duration": 1.4
+        },
+        {
+          "title": "delete button removes priority after confirmation",
+          "status": "passed",
+          "duration": 1.1
+        },
+        {
+          "title": "footer shows priority statistics",
+          "status": "passed",
+          "duration": 1
+        }
+      ]
+    },
+    {
+      "name": "AI Workbench",
+      "passed": 8,
+      "failed": 0,
+      "tests": [
+        {
+          "title": "AI Workbench toggle button is visible",
+          "status": "passed",
+          "duration": 1.1
+        },
+        {
+          "title": "clicking AI Workbench opens the panel",
+          "status": "passed",
+          "duration": 1.7
+        },
+        {
+          "title": "workbench shows transcript input",
+          "status": "passed",
+          "duration": 1.4
+        },
+        {
+          "title": "workbench shows URL input",
+          "status": "passed",
+          "duration": 1.4
+        },
+        {
+          "title": "Extract Priorities processes transcript with regex fallback",
+          "status": "passed",
+          "duration": 2.4
+        },
+        {
+          "title": "can add suggestion as priority",
+          "status": "passed",
+          "duration": 2.8
+        },
+        {
+          "title": "can dismiss suggestion",
+          "status": "passed",
+          "duration": 3.4
+        },
+        {
+          "title": "closing workbench hides the panel",
+          "status": "passed",
+          "duration": 1.7
+        }
+      ]
+    },
+    {
+      "name": "Filters",
+      "passed": 8,
+      "failed": 0,
+      "tests": [
+        {
+          "title": "version selector is visible",
+          "status": "passed",
+          "duration": 0.8
+        },
+        {
+          "title": "version selector shows all versions",
+          "status": "passed",
+          "duration": 0.8
+        },
+        {
+          "title": "changes toggle defaults to Yes",
+          "status": "passed",
+          "duration": 0.7
+        },
+        {
+          "title": "v3.1 badges are visible with changes on",
+          "status": "passed",
+          "duration": 0.7
+        },
+        {
+          "title": "hiding changes removes change markers",
+          "status": "passed",
+          "duration": 1
+        },
+        {
+          "title": "toggling changes back on restores markers",
+          "status": "passed",
+          "duration": 1.2
+        },
+        {
+          "title": "sidebar shows change count badges when enabled",
+          "status": "passed",
+          "duration": 0.7
+        },
+        {
+          "title": "hiding changes hides sidebar change info",
+          "status": "passed",
+          "duration": 1.1
+        }
+      ]
+    },
+    {
+      "name": "Media & Lightbox",
+      "passed": 8,
+      "failed": 0,
+      "tests": [
+        {
+          "title": "competitor intel shows thumbnail images",
+          "status": "passed",
+          "duration": 1.2
+        },
+        {
+          "title": "clicking image opens media modal",
+          "status": "passed",
+          "duration": 1.4
+        },
+        {
+          "title": "media modal shows navigation counter",
+          "status": "passed",
+          "duration": 1.6
+        },
+        {
+          "title": "media modal next button navigates forward",
+          "status": "passed",
+          "duration": 1.7
+        },
+        {
+          "title": "media modal close button works",
+          "status": "passed",
+          "duration": 1.7
+        },
+        {
+          "title": "media modal shows file with download option",
+          "status": "passed",
+          "duration": 2.2
+        },
+        {
+          "title": "file attachment buttons are clickable",
+          "status": "passed",
+          "duration": 1.1
+        },
+        {
+          "title": "Escape key closes media modal",
+          "status": "passed",
+          "duration": 1.7
+        }
+      ]
+    },
+    {
+      "name": "Rich Text Editing",
+      "passed": 11,
+      "failed": 0,
+      "tests": [
+        {
+          "title": "rich text editor is visible",
+          "status": "passed",
+          "duration": 1.5
+        },
+        {
+          "title": "can type text in editor",
+          "status": "passed",
+          "duration": 1.7
+        },
+        {
+          "title": "bold button applies bold formatting",
+          "status": "passed",
+          "duration": 1.7
+        },
+        {
+          "title": "italic button applies italic formatting",
+          "status": "passed",
+          "duration": 1.7
+        },
+        {
+          "title": "underline button applies underline formatting",
+          "status": "passed",
+          "duration": 1.6
+        },
+        {
+          "title": "bullet list button creates unordered list",
+          "status": "passed",
+          "duration": 1.7
+        },
+        {
+          "title": "numbered list button creates ordered list",
+          "status": "passed",
+          "duration": 1.8
+        },
+        {
+          "title": "highlight button applies highlighting",
+          "status": "passed",
+          "duration": 1.8
+        },
+        {
+          "title": "clear formatting button removes formatting",
+          "status": "passed",
+          "duration": 1.9
+        },
+        {
+          "title": "editor shows placeholder when empty",
+          "status": "passed",
+          "duration": 1
+        },
+        {
+          "title": "formatting toolbar has all expected buttons",
+          "status": "passed",
+          "duration": 1.3
+        }
+      ]
+    },
+    {
+      "name": "Keyboard Shortcuts",
+      "passed": 8,
+      "failed": 0,
+      "tests": [
+        {
+          "title": "ArrowRight navigates to next section",
+          "status": "passed",
+          "duration": 1.5
+        },
+        {
+          "title": "ArrowLeft navigates to previous section",
+          "status": "passed",
+          "duration": 1.7
+        },
+        {
+          "title": "Cmd+K focuses search input",
+          "status": "passed",
+          "duration": 1.1
+        },
+        {
+          "title": "Cmd+Enter submits comment",
+          "status": "passed",
+          "duration": 2.2
+        },
+        {
+          "title": "Escape closes media modal",
+          "status": "passed",
+          "duration": 1
+        },
+        {
+          "title": "ArrowRight does not navigate when comment form is open",
+          "status": "passed",
+          "duration": 1.5
+        },
+        {
+          "title": "multiple ArrowRight presses navigate through sections",
+          "status": "passed",
+          "duration": 1.7
+        },
+        {
+          "title": "ArrowLeft at first section stays on first section",
+          "status": "passed",
+          "duration": 1.4
+        }
+      ]
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { ReactFlow, Background, Controls, MiniMap, Handle, Position, useNodesState, useEdgesState, addEdge } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import testSummaryData from './test-summary.json';
 
 // ── Spec Data (v3.1) ──────────────────────────────────────────────────
 const S = [
@@ -531,6 +532,8 @@ export default function App() {
   const [selectedEntity, setSelectedEntity] = useState(null); // entity tuple or null
   const [cameFromEntities, setCameFromEntities] = useState(null); // entity tuple to return to, or null
   const [showPriorities, setShowPriorities] = useState(() => window.location.hash === '#priorities');
+  const [showTestSuite, setShowTestSuite] = useState(() => window.location.hash === '#testsuite');
+  const [expandedSuites, setExpandedSuites] = useState({});
   const [prioritiesData, setPrioritiesData] = useState([]);
   const [prioritySearch, setPrioritySearch] = useState('');
   const [priorityStatusFilter, setPriorityStatusFilter] = useState('');
@@ -607,17 +610,18 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (showTestSuite) { window.location.hash = 'testsuite'; return; }
     if (showPriorities) { window.location.hash = 'priorities'; return; }
     if (showOrgChart) { window.location.hash = 'orgchart'; return; }
     if (showEntities) { window.location.hash = 'entities'; return; }
     if (showCompetitors) { window.location.hash = 'competitors'; return; }
     contentRef.current?.scrollTo(0, 0);
     window.location.hash = S[activeSection][0];
-  }, [activeSection, showCompetitors, showEntities, showOrgChart, showPriorities]);
+  }, [activeSection, showCompetitors, showEntities, showOrgChart, showPriorities, showTestSuite]);
 
   const navigateToEntity = useCallback((secIdx, itemIdx, entity) => {
     setCameFromEntities(entity || true);
-    setShowEntities(false); setShowSummary(false); setShowCompetitors(false); setShowOrgChart(false); setShowPriorities(false);
+    setShowEntities(false); setShowSummary(false); setShowCompetitors(false); setShowOrgChart(false); setShowPriorities(false); setShowTestSuite(false);
     setActiveSection(secIdx);
     setTimeout(() => {
       const el = document.getElementById(`spec-item-${itemIdx}`);
@@ -1316,8 +1320,8 @@ export default function App() {
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e) => {
-      if (e.key === 'ArrowRight' && !commentingOn && !showOrgChart) { setShowSummary(false); setShowCompetitors(false); setShowEntities(false); setShowOrgChart(false); setShowPriorities(false); setActiveSection(s => Math.min(S.length - 1, s + 1)); }
-      if (e.key === 'ArrowLeft' && !commentingOn && !showOrgChart) { setShowSummary(false); setShowCompetitors(false); setShowEntities(false); setShowOrgChart(false); setShowPriorities(false); setActiveSection(s => Math.max(0, s - 1)); }
+      if (e.key === 'ArrowRight' && !commentingOn && !showOrgChart) { setShowSummary(false); setShowCompetitors(false); setShowEntities(false); setShowOrgChart(false); setShowPriorities(false); setShowTestSuite(false); setActiveSection(s => Math.min(S.length - 1, s + 1)); }
+      if (e.key === 'ArrowLeft' && !commentingOn && !showOrgChart) { setShowSummary(false); setShowCompetitors(false); setShowEntities(false); setShowOrgChart(false); setShowPriorities(false); setShowTestSuite(false); setActiveSection(s => Math.max(0, s - 1)); }
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); document.querySelector('#search-input')?.focus(); }
     };
     window.addEventListener('keydown', handler);
@@ -1326,7 +1330,7 @@ export default function App() {
 
   const section = S[activeSection];
   const filteredSections = search
-    ? S.map((s, i) => [s, i]).filter(([s]) => s[1].toLowerCase().includes(search.toLowerCase()) || s[3].some(it => it[2]?.toLowerCase().includes(search.toLowerCase())))
+    ? S.map((s, i) => [s, i]).filter(([s]) => s[1].toLowerCase().includes(search.toLowerCase()) || s[3].some(it => typeof it[2] === 'string' && it[2].toLowerCase().includes(search.toLowerCase())))
     : S.map((s, i) => [s, i]);
 
   const renderAttachments = (c, maxImgW = 200, maxImgH = 120) => {
@@ -2350,6 +2354,66 @@ export default function App() {
     );
   };
 
+  const renderTestSuiteView = () => {
+    const ts = testSummaryData;
+    const allPassing = ts.failed === 0;
+    const toggleSuite = (idx) => setExpandedSuites(prev => ({ ...prev, [idx]: !prev[idx] }));
+    const fmtDate = (iso) => { try { return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch { return iso; } };
+    const fmtDur = (s) => s >= 60 ? `${Math.floor(s / 60)}m ${Math.round(s % 60)}s` : `${s.toFixed(1)}s`;
+    const copyCmd = () => { navigator.clipboard?.writeText('npx playwright test'); };
+    return (
+      <div style={{ maxWidth: 800, margin: '0 auto' }}>
+        <div style={{ background: allPassing ? '#e8f5e9' : '#fbe9e7', border: `1px solid ${allPassing ? '#a5d6a7' : '#ef9a9a'}`, borderRadius: 8, padding: 16, marginBottom: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+            <span style={{ fontSize: 24 }}>{allPassing ? '✅' : '❌'}</span>
+            <span style={{ fontSize: 16, fontWeight: 600, color: allPassing ? '#2e7d32' : '#c62828' }}>{allPassing ? 'ALL TESTS PASSING' : `${ts.failed} FAILURE${ts.failed !== 1 ? 'S' : ''}`}</span>
+          </div>
+          <div style={{ display: 'flex', gap: 20, fontSize: 12, color: '#555', flexWrap: 'wrap' }}>
+            <span><strong>{ts.total}</strong> total</span>
+            <span style={{ color: '#2e7d32' }}><strong>{ts.passed}</strong> passed</span>
+            {ts.failed > 0 && <span style={{ color: '#c62828' }}><strong>{ts.failed}</strong> failed</span>}
+            {ts.skipped > 0 && <span style={{ color: '#f57c00' }}><strong>{ts.skipped}</strong> skipped</span>}
+            <span>⏱ {fmtDur(ts.duration)}</span>
+            <span>📅 {fmtDate(ts.date)}</span>
+          </div>
+        </div>
+        {ts.suites.map((suite, idx) => {
+          const expanded = expandedSuites[idx] !== undefined ? expandedSuites[idx] : false;
+          const suitePass = suite.failed === 0;
+          return (
+            <div key={idx} style={{ marginBottom: 8, border: '1px solid #e0e0e0', borderRadius: 6, overflow: 'hidden' }}>
+              <button onClick={() => toggleSuite(idx)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', background: suitePass ? '#f1f8e9' : '#fce4ec', border: 'none', cursor: 'pointer', fontSize: 13, fontFamily: 'inherit', textAlign: 'left' }}>
+                <span style={{ fontSize: 10, color: '#888', width: 16, textAlign: 'center' }}>{expanded ? '▼' : '▶'}</span>
+                <span style={{ fontSize: 14 }}>{suitePass ? '✅' : '❌'}</span>
+                <span style={{ flex: 1, fontWeight: 500, color: '#1a1a1a' }}>{suite.name}</span>
+                <span style={{ fontSize: 11, color: suitePass ? '#2e7d32' : '#c62828', background: suitePass ? '#c8e6c9' : '#ffcdd2', padding: '2px 8px', borderRadius: 3 }}>{suite.passed}/{suite.passed + suite.failed}</span>
+              </button>
+              {expanded && (
+                <div style={{ borderTop: '1px solid #e0e0e0' }}>
+                  {suite.tests.map((t, ti) => (
+                    <div key={ti} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 14px 6px 40px', fontSize: 12, borderBottom: ti < suite.tests.length - 1 ? '1px solid #f0f0f0' : 'none', background: t.status === 'passed' ? '#fff' : '#fff5f5' }}>
+                      <span style={{ color: t.status === 'passed' ? '#4caf50' : '#e53935', fontSize: 13 }}>{t.status === 'passed' ? '✓' : '✗'}</span>
+                      <span style={{ flex: 1, color: '#333' }}>{t.title}</span>
+                      <span style={{ color: '#999', fontSize: 11 }}>{t.duration}s</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+        <div style={{ marginTop: 24, padding: 16, background: '#f5f5f5', border: '1px solid #e0e0e0', borderRadius: 8 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: '#1a1a1a' }}>Run Tests</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <code style={{ flex: 1, padding: '8px 12px', background: '#fff', border: '1px solid #d0d0d0', borderRadius: 4, fontSize: 12, color: '#333', fontFamily: 'monospace' }}>npx playwright test</code>
+            <button onClick={copyCmd} style={{ padding: '8px 12px', background: '#fff', border: '1px solid #d0d0d0', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontFamily: 'inherit', color: '#555' }}>📋 Copy</button>
+          </div>
+          <div style={{ fontSize: 11, color: '#888', marginTop: 8 }}>Run from project root. Results will be saved to test-results/results.json</div>
+        </div>
+      </div>
+    );
+  };
+
   if (!loaded) return <div style={{ background: '#fff', color: '#888', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Georgia, serif', fontSize: 18 }}>Loading Coryphaeus Spec…</div>;
 
   return (
@@ -2403,30 +2467,34 @@ export default function App() {
             </label>
           </div>
           <div style={{ flex: 1, overflowY: 'auto', padding: '6px 0' }}>
-            <button className={`sidebar-btn ${showSummary && !showCompetitors && !showEntities && !showOrgChart && !showPriorities ? 'active' : ''}`} onClick={() => { setShowCompetitors(false); setShowEntities(false); setShowOrgChart(false); setShowPriorities(false); setShowSummary(true); setCameFromEntities(null); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
+            <button className={`sidebar-btn ${showSummary && !showCompetitors && !showEntities && !showOrgChart && !showPriorities && !showTestSuite ? 'active' : ''}`} onClick={() => { setShowCompetitors(false); setShowEntities(false); setShowOrgChart(false); setShowPriorities(false); setShowTestSuite(false); setShowSummary(true); setCameFromEntities(null); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
               <span style={{ flex: 1 }}>💬 Comments Summary</span>
               {totalComments > 0 && <span style={{ fontSize: 10, background: '#e8f0fc', color: '#4a7cc9', padding: '1px 5px', borderRadius: 3 }}>{totalComments}</span>}
             </button>
-            <button className={`sidebar-btn ${showCompetitors ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowEntities(false); setShowOrgChart(false); setShowPriorities(false); setShowCompetitors(true); setCameFromEntities(null); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
+            <button className={`sidebar-btn ${showCompetitors ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowEntities(false); setShowOrgChart(false); setShowPriorities(false); setShowTestSuite(false); setShowCompetitors(true); setCameFromEntities(null); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
               <span style={{ flex: 1 }}>🎯 Competitors</span>
               {competitorData.length > 0 && <span style={{ fontSize: 10, background: '#fce4ec', color: '#c62828', padding: '1px 5px', borderRadius: 3 }}>{competitorData.length}</span>}
             </button>
-            <button className={`sidebar-btn ${showEntities && !showOrgChart && !showPriorities ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowCompetitors(false); setShowOrgChart(false); setShowPriorities(false); setShowEntities(true); setCameFromEntities(null); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
+            <button className={`sidebar-btn ${showEntities && !showOrgChart && !showPriorities && !showTestSuite ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowCompetitors(false); setShowOrgChart(false); setShowPriorities(false); setShowTestSuite(false); setShowEntities(true); setCameFromEntities(null); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
               <span style={{ flex: 1 }}>🗃️ Entities</span>
               <span style={{ fontSize: 10, background: '#e8eaf6', color: '#3949ab', padding: '1px 5px', borderRadius: 3 }}>{ENTITIES.length}</span>
             </button>
-            <button className={`sidebar-btn ${showOrgChart ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowCompetitors(false); setShowEntities(false); setShowPriorities(false); setShowOrgChart(true); setCameFromEntities(null); setEditingPerson(null); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
+            <button className={`sidebar-btn ${showOrgChart ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowCompetitors(false); setShowEntities(false); setShowPriorities(false); setShowTestSuite(false); setShowOrgChart(true); setCameFromEntities(null); setEditingPerson(null); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
               <span style={{ flex: 1 }}>🏢 Org Chart</span>
               {orgNodes.length > 0 && <span style={{ fontSize: 10, background: '#e8f5e9', color: '#2e7d32', padding: '1px 5px', borderRadius: 3 }}>{orgNodes.length}</span>}
             </button>
-            <button className={`sidebar-btn ${showPriorities ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowCompetitors(false); setShowEntities(false); setShowOrgChart(false); setShowPriorities(true); setCameFromEntities(null); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
+            <button className={`sidebar-btn ${showPriorities ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowCompetitors(false); setShowEntities(false); setShowOrgChart(false); setShowTestSuite(false); setShowPriorities(true); setCameFromEntities(null); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
               <span style={{ flex: 1 }}>📋 Priorities</span>
               {prioritiesData.length > 0 && <span style={{ fontSize: 10, background: '#fff3e0', color: '#e65100', padding: '1px 5px', borderRadius: 3 }}>{prioritiesData.length}</span>}
+            </button>
+            <button className={`sidebar-btn ${showTestSuite ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowCompetitors(false); setShowEntities(false); setShowOrgChart(false); setShowPriorities(false); setShowTestSuite(true); setCameFromEntities(null); }} style={{ borderBottom: '1px solid #e0e0e0', marginBottom: 2 }}>
+              <span style={{ flex: 1 }}>🧪 Test Suite</span>
+              <span style={{ fontSize: 10, background: testSummaryData.failed === 0 ? '#e8f5e9' : '#fce4ec', color: testSummaryData.failed === 0 ? '#2e7d32' : '#c62828', padding: '1px 5px', borderRadius: 3 }}>{testSummaryData.failed === 0 ? `${testSummaryData.passed} ✓` : `${testSummaryData.failed} ✗`}</span>
             </button>
             {filteredSections.map(([s, realIdx]) => {
               const cmtCount = sectionCommentCount(realIdx);
               return (
-                <button key={s[0]} className={`sidebar-btn ${realIdx === activeSection && !showSummary && !showCompetitors && !showEntities && !showOrgChart && !showPriorities ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowCompetitors(false); setShowEntities(false); setShowOrgChart(false); setShowPriorities(false); setCameFromEntities(null); setActiveSection(realIdx); }}>
+                <button key={s[0]} className={`sidebar-btn ${realIdx === activeSection && !showSummary && !showCompetitors && !showEntities && !showOrgChart && !showPriorities && !showTestSuite ? 'active' : ''}`} onClick={() => { setShowSummary(false); setShowCompetitors(false); setShowEntities(false); setShowOrgChart(false); setShowPriorities(false); setShowTestSuite(false); setCameFromEntities(null); setActiveSection(realIdx); }}>
                   <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s[1]}</span>
                   <span style={{ display: 'flex', gap: 4 }}>
                     {s[2] > 0 && showChanges && <span style={{ fontSize: 10, background: '#f5e6c8', color: '#8b6914', padding: '1px 5px', borderRadius: 3, fontFamily: 'monospace' }}>{s[2]}</span>}
@@ -2443,18 +2511,21 @@ export default function App() {
         <div style={{ padding: '10px 20px', borderBottom: '1px solid #e0e0e0', display: 'flex', alignItems: 'center', gap: 12, background: '#f8f8f6', minHeight: 44 }}>
           {!sidebarOpen && <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 16 }}>▶</button>}
           <div style={{ flex: 1 }}>
-            <span style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 18, color: '#1a1a1a' }}>{showPriorities ? '📋 Priorities' : showOrgChart ? '🏢 Org Chart' : showEntities ? '🗃️ Data Model Entities' : showCompetitors ? '🎯 Competitors Intel' : showSummary ? 'Comments Summary' : section[1]}</span>
-            <span style={{ fontSize: 11, color: '#999', marginLeft: 10 }}>{showPriorities ? (priorityViewMode === 'category' ? 'Grouped by category' : 'Ranked priority list') : showOrgChart ? 'Relationship mapping' : showEntities ? '48 entities (v3.1)' : showCompetitors ? 'All competitors' : showSummary ? 'All sections' : `${section[0]}.md`}</span>
+            <span style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 18, color: '#1a1a1a' }}>{showTestSuite ? '🧪 Test Suite' : showPriorities ? '📋 Priorities' : showOrgChart ? '🏢 Org Chart' : showEntities ? '🗃️ Data Model Entities' : showCompetitors ? '🎯 Competitors Intel' : showSummary ? 'Comments Summary' : section[1]}</span>
+            <span style={{ fontSize: 11, color: '#999', marginLeft: 10 }}>{showTestSuite ? 'Playwright test results' : showPriorities ? (priorityViewMode === 'category' ? 'Grouped by category' : 'Ranked priority list') : showOrgChart ? 'Relationship mapping' : showEntities ? '48 entities (v3.1)' : showCompetitors ? 'All competitors' : showSummary ? 'All sections' : `${section[0]}.md`}</span>
           </div>
+          {showTestSuite && <span style={{ fontSize: 11, color: '#999' }}>{testSummaryData.total} tests</span>}
           {showPriorities && <span style={{ fontSize: 11, color: '#999' }}>{prioritiesData.length} priorities</span>}
           {showOrgChart && <span style={{ fontSize: 11, color: '#999' }}>{orgNodes.length} people</span>}
-          {showEntities && !showOrgChart && !showPriorities && <span style={{ fontSize: 11, color: '#999' }}>{ENTITIES.length} entities</span>}
+          {showEntities && !showOrgChart && !showPriorities && !showTestSuite && <span style={{ fontSize: 11, color: '#999' }}>{ENTITIES.length} entities</span>}
           {showCompetitors && <span style={{ fontSize: 11, color: '#999' }}>{competitorData.length} entries</span>}
-          {!showSummary && !showCompetitors && !showEntities && !showOrgChart && !showPriorities && <span style={{ fontSize: 11, color: '#999' }}>{section[3].length} items</span>}
-          {!showSummary && !showCompetitors && !showEntities && !showOrgChart && !showPriorities && section[2] > 0 && showChanges && <span className="badge-v31">{section[2]} v3.1</span>}
+          {!showSummary && !showCompetitors && !showEntities && !showOrgChart && !showPriorities && !showTestSuite && <span style={{ fontSize: 11, color: '#999' }}>{section[3].length} items</span>}
+          {!showSummary && !showCompetitors && !showEntities && !showOrgChart && !showPriorities && !showTestSuite && section[2] > 0 && showChanges && <span className="badge-v31">{section[2]} v3.1</span>}
         </div>
         <div ref={contentRef} style={{ flex: 1, overflowY: showOrgChart ? 'hidden' : 'auto', padding: showOrgChart ? 0 : '16px 24px 80px' }}>
-          {showPriorities ? (
+          {showTestSuite ? (
+            <div style={{ animation: 'fadeIn 0.2s ease' }}>{renderTestSuiteView()}</div>
+          ) : showPriorities ? (
             <div style={{ animation: 'fadeIn 0.2s ease' }}>{renderPrioritiesView()}</div>
           ) : showOrgChart ? (
             <div style={{ height: '100%' }}>{renderOrgChartView()}</div>
@@ -2468,7 +2539,7 @@ export default function App() {
             <div style={{ maxWidth: 800, margin: '0 auto', animation: 'fadeIn 0.2s ease' }}>
               {cameFromEntities && (
                 <button onClick={() => {
-                  setShowEntities(true); setShowSummary(false); setShowCompetitors(false); setShowOrgChart(false); setShowPriorities(false);
+                  setShowEntities(true); setShowSummary(false); setShowCompetitors(false); setShowOrgChart(false); setShowPriorities(false); setShowTestSuite(false);
                   if (Array.isArray(cameFromEntities)) setSelectedEntity(cameFromEntities);
                   setCameFromEntities(null);
                   setTimeout(() => contentRef.current?.scrollTo(0, 0), 50);
@@ -2481,7 +2552,18 @@ export default function App() {
           )}
         </div>
         <div style={{ padding: '8px 20px', borderTop: '1px solid #e0e0e0', background: '#f8f8f6', display: 'flex', alignItems: 'center', gap: 16, fontSize: 11, color: '#888' }}>
-          {showPriorities ? (
+          {showTestSuite ? (
+            <>
+              <span style={{ color: testSummaryData.failed === 0 ? '#2e7d32' : '#c62828' }}>🧪 {testSummaryData.total} tests</span>
+              <span>•</span>
+              <span style={{ color: '#2e7d32' }}>{testSummaryData.passed} passed</span>
+              {testSummaryData.failed > 0 && <><span>•</span><span style={{ color: '#c62828' }}>{testSummaryData.failed} failed</span></>}
+              <span>•</span>
+              <span>{testSummaryData.suites.length} suites</span>
+              <span>•</span>
+              <span>Playwright v1.58</span>
+            </>
+          ) : showPriorities ? (
             <>
               <span style={{ color: '#e65100' }}>📋 {prioritiesData.length} priorities</span>
               <span>•</span>

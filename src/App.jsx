@@ -463,6 +463,206 @@ async function prioritiesApiSave(data) {
   } catch {}
 }
 
+// ── Voice Agent Utilities ──
+
+function levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++)
+    for (let j = 1; j <= n; j++)
+      dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+  return dp[m][n];
+}
+
+function fuzzyMatch(input, candidates, threshold = 0.4) {
+  if (!input || !candidates?.length) return null;
+  const lower = input.toLowerCase().trim();
+  // Exact match first
+  const exact = candidates.find(c => c.toLowerCase() === lower);
+  if (exact) return exact;
+  // Starts-with match
+  const starts = candidates.find(c => c.toLowerCase().startsWith(lower));
+  if (starts) return starts;
+  // Contains match
+  const contains = candidates.find(c => c.toLowerCase().includes(lower));
+  if (contains) return contains;
+  // Levenshtein distance
+  let best = null, bestDist = Infinity;
+  for (const c of candidates) {
+    const dist = levenshtein(lower, c.toLowerCase());
+    const maxLen = Math.max(lower.length, c.length);
+    if (dist / maxLen <= threshold && dist < bestDist) {
+      best = c;
+      bestDist = dist;
+    }
+  }
+  return best;
+}
+
+const VOICE_WS_URL = "wss://crm-voice.agreeablebush-d2b406c6.centralus.azurecontainerapps.io/ws";
+
+const PCM_PROCESSOR_CODE = `
+class PCMProcessor extends AudioWorkletProcessor {
+  process(inputs) {
+    const input = inputs[0];
+    if (input && input[0]) {
+      const f32 = input[0];
+      const i16 = new Int16Array(f32.length);
+      for (let i = 0; i < f32.length; i++) {
+        const s = Math.max(-1, Math.min(1, f32[i]));
+        i16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+      }
+      this.port.postMessage(i16.buffer, [i16.buffer]);
+    }
+    return true;
+  }
+}
+registerProcessor('pcm-processor', PCMProcessor);
+`;
+
+class VoiceWebSocket {
+  constructor(onTranscript, onStatus) {
+    this.onTranscript = onTranscript;
+    this.onStatus = onStatus;
+    this.ws = null;
+    this.audioCtx = null;
+    this.stream = null;
+    this.retryCount = 0;
+    this.maxRetries = 3;
+    this.running = false;
+  }
+
+  async start() {
+    this.running = true;
+    this.retryCount = 0;
+    await this._connect();
+  }
+
+  async _connect() {
+    if (!this.running) return;
+    try {
+      this.onStatus?.('Connecting to voice service…', 'info');
+      this.ws = new WebSocket(VOICE_WS_URL);
+      this.ws.binaryType = 'arraybuffer';
+
+      this.ws.onopen = async () => {
+        this.retryCount = 0;
+        this.onStatus?.('Voice service connected', 'success');
+        try {
+          this.stream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 16000, channelCount: 1 } });
+          this.audioCtx = new AudioContext({ sampleRate: 16000 });
+          const blob = new Blob([PCM_PROCESSOR_CODE], { type: 'application/javascript' });
+          const url = URL.createObjectURL(blob);
+          await this.audioCtx.audioWorklet.addModule(url);
+          URL.revokeObjectURL(url);
+          const source = this.audioCtx.createMediaStreamSource(this.stream);
+          const processor = new AudioWorkletNode(this.audioCtx, 'pcm-processor');
+          processor.port.onmessage = (e) => {
+            if (this.ws?.readyState === WebSocket.OPEN) {
+              this.ws.send(e.data);
+            }
+          };
+          source.connect(processor);
+          processor.connect(this.audioCtx.destination);
+        } catch (err) {
+          this.onStatus?.('Microphone access denied', 'error');
+        }
+      };
+
+      this.ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.type === 'transcription' && msg.text) {
+            this.onTranscript?.(msg.text);
+          }
+        } catch {}
+      };
+
+      this.ws.onclose = () => {
+        if (this.running && this.retryCount < this.maxRetries) {
+          this.retryCount++;
+          const delay = Math.min(1000 * Math.pow(2, this.retryCount), 8000);
+          this.onStatus?.(`Reconnecting (${this.retryCount})…`, 'info');
+          setTimeout(() => this._connect(), delay);
+        }
+      };
+
+      this.ws.onerror = () => {};
+    } catch (err) {
+      this.onStatus?.('WebSocket connection failed', 'error');
+    }
+  }
+
+  stop() {
+    this.running = false;
+    if (this.stream) { this.stream.getTracks().forEach(t => t.stop()); this.stream = null; }
+    if (this.audioCtx) { this.audioCtx.close().catch(() => {}); this.audioCtx = null; }
+    if (this.ws) { this.ws.close(); this.ws = null; }
+  }
+}
+
+const VOICE_CMD_API = "/api/voice-commands";
+
+async function voiceCmdApiGet() {
+  try {
+    const r = await fetch(VOICE_CMD_API);
+    if (!r.ok) throw new Error(r.statusText);
+    const data = await r.json();
+    if (Array.isArray(data) && data.length > 0) return data;
+    try { const local = JSON.parse(localStorage.getItem("coryphaeus-voice-commands") || "[]"); if (local.length > 0) return local; } catch {}
+    return data;
+  } catch {
+    try { return JSON.parse(localStorage.getItem("coryphaeus-voice-commands") || "[]"); } catch { return []; }
+  }
+}
+
+async function voiceCmdApiSave(data) {
+  try { localStorage.setItem("coryphaeus-voice-commands", JSON.stringify(data)); } catch {}
+  try {
+    const r = await fetch(VOICE_CMD_API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+    if (!r.ok) throw new Error(r.statusText);
+  } catch {}
+}
+
+const VOICE_CMD_PATTERNS = [
+  { id: 'navigate', match: /^(?:open|go to|show|navigate to|switch to|view)\s+(.+)/i, desc: 'Navigate to a view' },
+  { id: 'search', match: /^(?:search|find|look for|search for)\s+(.+)/i, desc: 'Search for text' },
+  { id: 'count', match: /^(?:how many|count)\s+(.+)/i, desc: 'Count items' },
+  { id: 'stats', match: /^(?:stats|statistics|status|summary)\s*$/i, desc: 'Show statistics' },
+  { id: 'help', match: /^(?:help|what can you do|commands)\s*$/i, desc: 'Show help' },
+  { id: 'back', match: /^(?:back|go back|previous)\s*$/i, desc: 'Go back' },
+  { id: 'refresh', match: /^(?:refresh|reload)\s*$/i, desc: 'Refresh data' },
+  { id: 'filter', match: /^(?:filter|filter by)\s+(.+)/i, desc: 'Filter items' },
+  { id: 'kanban', match: /^(?:kanban|board|board view)\s*$/i, desc: 'Switch to kanban' },
+  { id: 'create', match: /^(?:create|add|new)\s+(.+)/i, desc: 'Create new item' },
+  { id: 'delete', match: /^(?:delete|remove)\s+(.+)/i, desc: 'Delete item' },
+  { id: 'list', match: /^(?:list|show all)\s+(.+)/i, desc: 'List items' },
+  { id: 'learn', match: /^(?:learn|teach|remember)\s+(?:when i say\s+)?(.+?)(?:\s*,\s*|\s+then\s+)(.+)/i, desc: 'Teach a command' },
+  { id: 'module_info', match: /^(?:what is|tell me about|describe|info on|explain)\s+(.+)/i, desc: 'Describe a module' },
+  { id: 'sort', match: /^(?:sort|sort by|order by)\s+(.+)/i, desc: 'Sort items' },
+  { id: 'next_prev', match: /^(?:next|previous|prev|next section|previous section)\s*$/i, desc: 'Next/prev section' },
+];
+
+const VOICE_CMD_EXAMPLES = {
+  'Navigation': ['open priorities', 'show entities', 'go to org chart', 'open comments', 'show competitors', 'go to section 3', 'next section', 'go back'],
+  'Create': ['create priority', 'create new priority'],
+  'Views': ['kanban', 'sort by category', 'sort by rank', 'filter pending', 'filter completed', 'filter ongoing', 'show all', 'refresh'],
+  'Search & Data': ['how many entities', 'search account', 'stats', 'count priorities', 'count comments', 'what is Account', 'describe Opportunity', 'tell me about Lead'],
+  'Teaching': ['learn when I say morning, open priorities then open summary', 'learn when I say review, show comments then show priorities'],
+};
+
+const NAV_ALIASES = {
+  'priorities': 'priorities', 'priority': 'priorities', 'priority list': 'priorities',
+  'org chart': 'orgchart', 'orgchart': 'orgchart', 'org': 'orgchart', 'organization': 'orgchart', 'people': 'orgchart',
+  'entities': 'entities', 'entity': 'entities', 'data model': 'entities', 'data': 'entities',
+  'competitors': 'competitors', 'competitor': 'competitors', 'intel': 'competitors', 'competition': 'competitors',
+  'comments': 'summary', 'summary': 'summary', 'comment summary': 'summary', 'review': 'summary',
+  'home': 'home', 'spec': 'home', 'specification': 'home', 'front': 'home',
+  'workbench': 'workbench', 'ai': 'workbench', 'ai workbench': 'workbench',
+};
+
 // ── Main App ──
 export default function App() {
   const [activeSection, setActiveSection] = useState(() => {
@@ -553,6 +753,23 @@ export default function App() {
   const [dragPriorityId, setDragPriorityId] = useState(null);
   const [dragOverPriorityId, setDragOverPriorityId] = useState(null);
   const [modalRect, setModalRect] = useState({ x: 80, y: 40, w: 0, h: 0 }); // 0 = auto
+  // Voice Agent state
+  const [voicePanelOpen, setVoicePanelOpen] = useState(true);
+  const [voiceListening, setVoiceListening] = useState(false);
+  const [voiceInterimText, setVoiceInterimText] = useState('');
+  const [voiceFinalText, setVoiceFinalText] = useState('');
+  const [voiceStatus, setVoiceStatusState] = useState({ msg: '', type: 'idle' }); // idle/listening/processing/speaking/error
+  const [voiceAlwaysOn, setVoiceAlwaysOn] = useState(true);
+  const [voiceProcessing, setVoiceProcessing] = useState(false);
+  const [voiceFlashExec, setVoiceFlashExec] = useState(false);
+  const [voiceCommandLog, setVoiceCommandLog] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("coryphaeus-voice-log") || "[]"); } catch { return []; }
+  });
+  const [voiceLearnedCommands, setVoiceLearnedCommands] = useState([]);
+  const [voiceExpandedCategory, setVoiceExpandedCategory] = useState(null);
+  const [voiceShowRecent, setVoiceShowRecent] = useState(true);
+  const [voiceLogFilter, setVoiceLogFilter] = useState('all'); // all | success | error
+  const voiceConfidenceRef = useRef(null);
   const dragRef = useRef(null); // { startX, startY, startRectX, startRectY, type: 'move'|'resize-*' }
   const contentRef = useRef(null);
   const inputRef = useRef(null);
@@ -570,6 +787,13 @@ export default function App() {
   const compFileInputRef = useRef(null);
   const compVideoInputRef = useRef(null);
   const priorityEditorRef = useRef(null);
+  // Voice Agent refs
+  const voiceRecRef = useRef(null);
+  const voiceSynthRef = useRef(typeof window !== 'undefined' ? window.speechSynthesis : null);
+  const voiceIsSpeakingRef = useRef(false);
+  const voiceAlwaysOnRef = useRef(true);
+  const voiceRestartTimerRef = useRef(null);
+  const voicePipecatRef = useRef(null);
 
   // Derive next comment number from highest existing num
   const nextCommentNum = useCallback(() => {
@@ -627,6 +851,517 @@ export default function App() {
       const el = document.getElementById(`spec-item-${itemIdx}`);
       if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }, 100);
+  }, []);
+
+  // Voice: centralized navigation helper
+  const navigateTo = useCallback((target, opts = {}) => {
+    setCameFromEntities(null);
+    if (target === 'priorities') {
+      setShowPriorities(true); setShowOrgChart(false); setShowEntities(false); setShowCompetitors(false); setShowSummary(false);
+    } else if (target === 'orgchart') {
+      setShowOrgChart(true); setShowPriorities(false); setShowEntities(false); setShowCompetitors(false); setShowSummary(false);
+    } else if (target === 'entities') {
+      setShowEntities(true); setShowPriorities(false); setShowOrgChart(false); setShowCompetitors(false); setShowSummary(false);
+    } else if (target === 'competitors') {
+      setShowCompetitors(true); setShowPriorities(false); setShowOrgChart(false); setShowEntities(false); setShowSummary(false);
+    } else if (target === 'summary') {
+      setShowSummary(true); setShowPriorities(false); setShowOrgChart(false); setShowEntities(false); setShowCompetitors(false);
+    } else if (target === 'workbench') {
+      setShowWorkbench(true);
+    } else if (target === 'section' && opts.index !== undefined) {
+      setShowPriorities(false); setShowOrgChart(false); setShowEntities(false); setShowCompetitors(false); setShowSummary(false);
+      setActiveSection(opts.index);
+    } else if (target === 'home') {
+      setShowPriorities(false); setShowOrgChart(false); setShowEntities(false); setShowCompetitors(false); setShowSummary(false);
+      setActiveSection(0);
+    }
+  }, []);
+
+  // Voice: load learned commands on mount
+  useEffect(() => {
+    voiceCmdApiGet().then(data => {
+      if (Array.isArray(data)) setVoiceLearnedCommands(data);
+    });
+  }, []);
+
+  // Voice: TTS speak helper
+  const speak = useCallback((text) => {
+    if (!voiceSynthRef.current || !text) return;
+    try {
+      voiceSynthRef.current.cancel();
+      const utt = new SpeechSynthesisUtterance(text);
+      utt.rate = 1.1;
+      utt.onstart = () => { voiceIsSpeakingRef.current = true; };
+      utt.onend = () => { voiceIsSpeakingRef.current = false; };
+      utt.onerror = () => { voiceIsSpeakingRef.current = false; };
+      voiceSynthRef.current.speak(utt);
+    } catch {}
+  }, []);
+
+  // Voice: status message helper
+  const voiceSetStatus = useCallback((msg, type = 'info') => {
+    setVoiceStatusState({ msg, type });
+  }, []);
+
+  // Voice: fuzzy nav resolution
+  const resolveNav = useCallback((text) => {
+    const lower = text.toLowerCase().trim();
+    // Check nav aliases first
+    for (const [alias, target] of Object.entries(NAV_ALIASES)) {
+      if (lower === alias || lower.includes(alias)) return target;
+    }
+    // Try matching section labels
+    const sectionLabels = S.map((s, i) => ({ label: s[1], index: i }));
+    const match = fuzzyMatch(lower, sectionLabels.map(s => s.label));
+    if (match) {
+      const found = sectionLabels.find(s => s.label === match);
+      if (found) return { type: 'section', index: found.index, label: found.label };
+    }
+    return null;
+  }, []);
+
+  // Voice: fuzzy entity resolution
+  const resolveEntity = useCallback((text) => {
+    const names = ENTITIES.map(e => e[0]);
+    return fuzzyMatch(text, names);
+  }, []);
+
+  // Voice: core command processor
+  const processVoiceCommand = useCallback((text, depth = 0, groupId = null) => {
+    if (!text?.trim()) return;
+    const trimmed = text.trim();
+    const lower = trimmed.toLowerCase();
+
+    // Helper to log command + response pair with rich metadata
+    const logCmd = (response, status, patternId = null) => {
+      const entry = {
+        id: Date.now() + Math.random(),
+        text: trimmed,
+        response,
+        status: status || 'success', // success | error | info
+        patternId,
+        confidence: voiceConfidenceRef.current,
+        groupId,
+        depth,
+        time: new Date().toISOString(),
+      };
+      voiceConfidenceRef.current = null;
+      setVoiceCommandLog(prev => {
+        const next = [entry, ...prev].slice(0, 100);
+        try { localStorage.setItem("coryphaeus-voice-log", JSON.stringify(next)); } catch {}
+        return next;
+      });
+    };
+
+    // Flash execution indicator
+    setVoiceFlashExec(true);
+    setTimeout(() => setVoiceFlashExec(false), 600);
+
+    // Check learned commands first (only at depth 0 to prevent infinite recursion)
+    if (depth === 0) {
+      const learned = voiceLearnedCommands.find(c => {
+        const trigger = c.trigger.toLowerCase();
+        return lower === trigger || lower.includes(trigger);
+      });
+      if (learned) {
+        const resp = `Running ${learned.trigger}`;
+        speak(resp);
+        voiceSetStatus(`Executing: ${learned.trigger}`, 'success');
+        const gid = Date.now(); // group ID links parent to sub-steps
+        logCmd(resp, 'success', 'learned');
+        // Increment usage
+        const updated = voiceLearnedCommands.map(c => c.trigger === learned.trigger ? { ...c, usageCount: (c.usageCount || 0) + 1, lastUsed: new Date().toISOString() } : c);
+        setVoiceLearnedCommands(updated);
+        voiceCmdApiSave(updated);
+        // Execute steps sequentially with delays, linked by groupId
+        const steps = learned.steps || [];
+        steps.forEach((step, i) => {
+          setTimeout(() => processVoiceCommand(step, depth + 1, gid), i * 800);
+        });
+        return;
+      }
+    }
+
+    // Match against command patterns
+    for (const pat of VOICE_CMD_PATTERNS) {
+      const m = trimmed.match(pat.match);
+      if (!m) continue;
+
+      switch (pat.id) {
+        case 'navigate': {
+          const target = m[1];
+          const resolved = resolveNav(target);
+          if (resolved && typeof resolved === 'string') {
+            navigateTo(resolved);
+            const resp = `Opening ${target}`;
+            speak(resp);
+            voiceSetStatus(`Navigated to ${target}`, 'success');
+            logCmd(resp, 'success', 'navigate');
+          } else if (resolved?.type === 'section') {
+            navigateTo('section', { index: resolved.index });
+            const resp = `Opening section ${resolved.label}`;
+            speak(resp);
+            voiceSetStatus(`Navigated to ${resolved.label}`, 'success');
+            logCmd(resp, 'success', 'navigate');
+          } else {
+            const resp = `I couldn't find ${target}`;
+            speak(resp);
+            voiceSetStatus(`Unknown view: ${target}`, 'error');
+            logCmd(resp, 'error', 'navigate');
+          }
+          return;
+        }
+        case 'search': {
+          const term = m[1];
+          setSearch(term);
+          setShowPriorities(false); setShowOrgChart(false); setShowEntities(false); setShowCompetitors(false); setShowSummary(false);
+          const resp = `Searching for ${term}`;
+          speak(resp);
+          voiceSetStatus(`Searching: ${term}`, 'success');
+          logCmd(resp, 'success', 'search');
+          return;
+        }
+        case 'count': {
+          const what = m[1].toLowerCase();
+          let count = 0, label = what;
+          if (what.includes('entit')) { count = ENTITIES.length; label = 'entities'; }
+          else if (what.includes('comment')) { count = Object.values(comments).reduce((s, a) => s + a.length, 0); label = 'comments'; }
+          else if (what.includes('section')) { count = S.length; label = 'sections'; }
+          else if (what.includes('priorit')) { count = prioritiesData.length; label = 'priorities'; }
+          else if (what.includes('competitor')) { count = competitorData.length; label = 'competitor entries'; }
+          else if (what.includes('people') || what.includes('person') || what.includes('org')) { count = orgNodes.length; label = 'people in org chart'; }
+          else { const resp = `I'm not sure what to count for ${what}`; speak(resp); voiceSetStatus(`Unknown count target: ${what}`, 'error'); logCmd(resp, 'error', 'count'); return; }
+          const resp = `There are ${count} ${label}`;
+          speak(resp);
+          voiceSetStatus(`${count} ${label}`, 'data');
+          logCmd(resp, 'success', 'count');
+          return;
+        }
+        case 'stats': {
+          const resp = `${S.length} sections, ${Object.values(comments).reduce((s, a) => s + a.length, 0)} comments, ${ENTITIES.length} entities, ${prioritiesData.length} priorities, ${competitorData.length} competitors, ${orgNodes.length} people`;
+          speak(resp);
+          voiceSetStatus(resp, 'data');
+          logCmd(resp, 'success', 'stats');
+          return;
+        }
+        case 'help': {
+          const resp = 'I can navigate, search, count items, show stats, create priorities, and learn new commands. Say help for more.';
+          speak(resp);
+          voiceSetStatus('Voice commands: navigate, search, count, stats, create, learn, sort, filter', 'info');
+          logCmd(resp, 'info', 'help');
+          return;
+        }
+        case 'back': {
+          let resp;
+          if (showPriorities || showOrgChart || showEntities || showCompetitors || showSummary) {
+            navigateTo('home');
+            resp = 'Going back';
+            speak(resp);
+            voiceSetStatus('Back to spec', 'success');
+          } else {
+            const prev = Math.max(0, activeSection - 1);
+            setActiveSection(prev);
+            resp = `Section ${S[prev][1]}`;
+            speak(resp);
+            voiceSetStatus(`Back to ${S[prev][1]}`, 'success');
+          }
+          logCmd(resp, 'success', 'back');
+          return;
+        }
+        case 'refresh': {
+          logCmd('Refreshing page', 'success', 'refresh');
+          window.location.reload();
+          return;
+        }
+        case 'filter': {
+          const filterVal = m[1].toLowerCase();
+          let resp, st = 'success';
+          if (showPriorities) {
+            const statuses = ['pending', 'ongoing', 'completed', 'blocked'];
+            const matched = fuzzyMatch(filterVal, statuses);
+            if (matched) { setPriorityStatusFilter(matched); resp = `Filtering priorities by ${matched}`; speak(resp); voiceSetStatus(`Filter: ${matched}`, 'success'); }
+            else { resp = `Unknown filter: ${filterVal}`; st = 'error'; speak(resp); voiceSetStatus(resp, 'error'); }
+          } else {
+            setFilterV31(!filterV31);
+            resp = filterV31 ? 'Showing all items' : 'Showing v3.1 changes only';
+            speak(resp);
+            voiceSetStatus(filterV31 ? 'All items' : 'v3.1 only', 'success');
+          }
+          logCmd(resp, st, 'filter');
+          return;
+        }
+        case 'kanban': {
+          navigateTo('priorities');
+          setPriorityViewMode('category');
+          const resp = 'Switched to category view';
+          speak(resp);
+          voiceSetStatus('Category view', 'success');
+          logCmd(resp, 'success', 'kanban');
+          return;
+        }
+        case 'create': {
+          const what2 = m[1].toLowerCase();
+          let resp, st = 'success';
+          if (what2.includes('priorit')) {
+            navigateTo('priorities');
+            setAddingPriority(true);
+            resp = 'Creating new priority';
+            speak(resp);
+            voiceSetStatus('New priority form opened', 'success');
+          } else {
+            resp = 'I can create priorities. Say create priority.';
+            st = 'info';
+            speak(resp);
+            voiceSetStatus('Try: create priority', 'info');
+          }
+          logCmd(resp, st, 'create');
+          return;
+        }
+        case 'list': {
+          const what3 = m[1].toLowerCase();
+          let resp;
+          if (what3.includes('entit')) { navigateTo('entities'); resp = 'Showing entities'; }
+          else if (what3.includes('priorit')) { navigateTo('priorities'); resp = 'Showing priorities'; }
+          else if (what3.includes('comment')) { navigateTo('summary'); resp = 'Showing comments'; }
+          else if (what3.includes('competitor')) { navigateTo('competitors'); resp = 'Showing competitors'; }
+          else { resp = `Showing ${what3}`; }
+          speak(resp);
+          voiceSetStatus(`Listing ${what3}`, 'success');
+          logCmd(resp, 'success', 'list');
+          return;
+        }
+        case 'learn': {
+          const trigger = m[1].trim();
+          const stepsStr = m[2].trim();
+          const steps = stepsStr.split(/\s+then\s+/i).map(s => s.trim()).filter(Boolean);
+          if (!trigger || steps.length === 0) {
+            const resp = 'Please say: learn when I say trigger, then action one then action two';
+            speak(resp);
+            voiceSetStatus('Invalid learn syntax', 'error');
+            logCmd(resp, 'error', 'learn');
+            return;
+          }
+          const newCmd = { trigger, steps, usageCount: 0, created: new Date().toISOString(), lastUsed: null };
+          const exists = voiceLearnedCommands.findIndex(c => c.trigger.toLowerCase() === trigger.toLowerCase());
+          let updated;
+          if (exists >= 0) {
+            updated = [...voiceLearnedCommands];
+            updated[exists] = { ...updated[exists], steps };
+          } else {
+            updated = [...voiceLearnedCommands, newCmd];
+          }
+          setVoiceLearnedCommands(updated);
+          voiceCmdApiSave(updated);
+          const resp = `Learned command: ${trigger}`;
+          speak(resp);
+          voiceSetStatus(`Learned: "${trigger}" → ${steps.length} steps`, 'success');
+          logCmd(resp, 'success', 'learn');
+          return;
+        }
+        case 'module_info': {
+          let resp, st = 'success';
+          const entityName = resolveEntity(m[1]);
+          if (entityName) {
+            const entity = ENTITIES.find(e => e[0] === entityName);
+            if (entity) {
+              resp = `${entityName} is a ${entity[4]} entity from version ${entity[3]}, defined in section ${S[entity[1]]?.[1] || entity[1]}`;
+              speak(resp);
+              voiceSetStatus(`${entityName}: ${entity[4]}, v${entity[3]}`, 'data');
+            }
+          } else {
+            // Try section match
+            const nav = resolveNav(m[1]);
+            if (nav?.type === 'section') {
+              resp = `Section: ${nav.label}`;
+              speak(resp);
+              voiceSetStatus(nav.label, 'data');
+            } else {
+              resp = `I don't have info on ${m[1]}`;
+              st = 'error';
+              speak(resp);
+              voiceSetStatus(`Unknown: ${m[1]}`, 'error');
+            }
+          }
+          logCmd(resp, st, 'module_info');
+          return;
+        }
+        case 'sort': {
+          const sortBy = m[1].toLowerCase();
+          let resp, st = 'success';
+          if (showPriorities) {
+            if (sortBy.includes('categor')) { setPriorityViewMode('category'); resp = 'Sorted by category'; }
+            else { setPriorityViewMode('rank'); resp = 'Sorted by rank'; }
+            speak(resp);
+            voiceSetStatus(`Sorted: ${sortBy}`, 'success');
+          } else {
+            resp = 'Sorting is available in priorities view';
+            st = 'info';
+            speak(resp);
+            voiceSetStatus('Navigate to priorities first', 'info');
+          }
+          logCmd(resp, st, 'sort');
+          return;
+        }
+        case 'next_prev': {
+          const isNext = lower.includes('next');
+          const newIdx = isNext ? Math.min(S.length - 1, activeSection + 1) : Math.max(0, activeSection - 1);
+          setShowPriorities(false); setShowOrgChart(false); setShowEntities(false); setShowCompetitors(false); setShowSummary(false);
+          setActiveSection(newIdx);
+          const resp = S[newIdx][1];
+          speak(resp);
+          voiceSetStatus(resp, 'success');
+          logCmd(resp, 'success', 'next_prev');
+          return;
+        }
+        default: break;
+      }
+    }
+
+    // No pattern matched
+    const resp = `I didn't understand: ${trimmed}. Say help for commands.`;
+    speak(resp);
+    voiceSetStatus(`Unknown: ${trimmed}`, 'error');
+    logCmd(resp, 'error', null);
+  }, [voiceLearnedCommands, comments, prioritiesData, competitorData, orgNodes, activeSection, showPriorities, showOrgChart, showEntities, showCompetitors, showSummary, filterV31, navigateTo, resolveNav, resolveEntity, speak, voiceSetStatus]);
+
+  // Voice: always-on toggle
+  const toggleAlwaysOn = useCallback(() => {
+    const newVal = !voiceAlwaysOnRef.current;
+    voiceAlwaysOnRef.current = newVal;
+    setVoiceAlwaysOn(newVal);
+
+    if (newVal) {
+      // Start continuous recognition
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        const rec = new SpeechRecognition();
+        rec.continuous = true;
+        rec.interimResults = true;
+        rec.lang = 'en-US';
+        rec.onresult = (e) => {
+          let interim = '', final = '', bestConfidence = 0;
+          for (let i = e.resultIndex; i < e.results.length; i++) {
+            const t = e.results[i][0].transcript;
+            const c = e.results[i][0].confidence;
+            if (c > bestConfidence) bestConfidence = c;
+            if (e.results[i].isFinal) final += t;
+            else interim += t;
+          }
+          setVoiceInterimText(interim);
+          if (final) {
+            setVoiceFinalText(final);
+            voiceConfidenceRef.current = bestConfidence > 0 ? Math.round(bestConfidence * 100) : null;
+            // Check for "now" trigger word
+            const trimmed = final.trim().toLowerCase();
+            if (trimmed.endsWith(' now') || trimmed.endsWith(' now.')) {
+              const cmd = trimmed.replace(/\s+now\.?$/, '').trim();
+              if (cmd) processVoiceCommand(cmd);
+            }
+          }
+        };
+        rec.onerror = (e) => {
+          if (e.error !== 'no-speech' && e.error !== 'aborted') {
+            voiceSetStatus(`Recognition error: ${e.error}`, 'error');
+          }
+        };
+        rec.onend = () => {
+          if (voiceAlwaysOnRef.current) {
+            voiceRestartTimerRef.current = setTimeout(() => {
+              try { rec.start(); } catch {}
+            }, 300);
+          }
+        };
+        voiceRecRef.current = rec;
+        try { rec.start(); } catch {}
+        voiceSetStatus('Always-on: say command + "now"', 'info');
+        speak('Always on mode activated. Say a command followed by now to execute.');
+      } else {
+        // Fallback to WebSocket
+        const pipecat = new VoiceWebSocket(
+          (text) => {
+            setVoiceFinalText(text);
+            const trimmed = text.trim().toLowerCase();
+            if (trimmed.endsWith(' now') || trimmed.endsWith(' now.')) {
+              const cmd = trimmed.replace(/\s+now\.?$/, '').trim();
+              if (cmd) processVoiceCommand(cmd);
+            }
+          },
+          (msg, type) => voiceSetStatus(msg, type)
+        );
+        pipecat.start();
+        voicePipecatRef.current = pipecat;
+      }
+    } else {
+      // Stop continuous recognition
+      if (voiceRecRef.current) {
+        try { voiceRecRef.current.abort(); } catch {}
+        voiceRecRef.current = null;
+      }
+      if (voiceRestartTimerRef.current) {
+        clearTimeout(voiceRestartTimerRef.current);
+        voiceRestartTimerRef.current = null;
+      }
+      if (voicePipecatRef.current) {
+        voicePipecatRef.current.stop();
+        voicePipecatRef.current = null;
+      }
+      setVoiceInterimText('');
+      voiceSetStatus('Always-on disabled', 'info');
+      speak('Always on mode deactivated');
+    }
+  }, [processVoiceCommand, speak, voiceSetStatus]);
+
+  // Voice: auto-start always-on recognition on mount
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) return;
+      const rec = new SpeechRecognition();
+      rec.continuous = true;
+      rec.interimResults = true;
+      rec.lang = 'en-US';
+      rec.onresult = (e) => {
+        let interim = '', final = '', bestConfidence = 0;
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const t = e.results[i][0].transcript;
+          const c = e.results[i][0].confidence;
+          if (c > bestConfidence) bestConfidence = c;
+          if (e.results[i].isFinal) final += t;
+          else interim += t;
+        }
+        setVoiceInterimText(interim);
+        if (final) {
+          setVoiceFinalText(final);
+          voiceConfidenceRef.current = bestConfidence > 0 ? Math.round(bestConfidence * 100) : null;
+          const trimmed = final.trim().toLowerCase();
+          if (trimmed.endsWith(' now') || trimmed.endsWith(' now.')) {
+            const cmd = trimmed.replace(/\s+now\.?$/, '').trim();
+            if (cmd) processVoiceCommand(cmd);
+          }
+        }
+      };
+      rec.onerror = () => {};
+      rec.onend = () => {
+        if (voiceAlwaysOnRef.current) {
+          voiceRestartTimerRef.current = setTimeout(() => {
+            try { rec.start(); } catch {}
+          }, 300);
+        }
+      };
+      voiceRecRef.current = rec;
+      try { rec.start(); } catch {}
+    }, 500);
+    return () => clearTimeout(timer);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Voice: cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (voiceRecRef.current) { try { voiceRecRef.current.abort(); } catch {} }
+      if (voiceRestartTimerRef.current) clearTimeout(voiceRestartTimerRef.current);
+      if (voicePipecatRef.current) voicePipecatRef.current.stop();
+      if (voiceSynthRef.current) voiceSynthRef.current.cancel();
+    };
   }, []);
 
   const commentKey = (secIdx, itemIdx) => `${S[secIdx][0]}-${itemIdx}`;
@@ -2426,6 +3161,8 @@ export default function App() {
         .sidebar-btn.active { background: rgba(139,105,20,0.06); border-left-color: #8b6914; color: #1a1a1a; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+        @keyframes voicePulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(76,175,80,0.4); } 50% { box-shadow: 0 0 0 8px rgba(76,175,80,0); } }
+        @keyframes voicePulseRed { 0%, 100% { box-shadow: 0 0 0 0 rgba(244,67,54,0.4); } 50% { box-shadow: 0 0 0 8px rgba(244,67,54,0); } }
         .rtf-editor:empty:before { content: attr(data-placeholder); color: #bbb; pointer-events: none; }
         .rtf-editor ul, .rtf-editor ol { margin: 4px 0; padding-left: 20px; }
         .rtf-editor li { margin-bottom: 2px; }
@@ -2514,6 +3251,11 @@ export default function App() {
             <span style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 18, color: '#1a1a1a' }}>{showTestSuite ? '🧪 Test Suite' : showPriorities ? '📋 Priorities' : showOrgChart ? '🏢 Org Chart' : showEntities ? '🗃️ Data Model Entities' : showCompetitors ? '🎯 Competitors Intel' : showSummary ? 'Comments Summary' : section[1]}</span>
             <span style={{ fontSize: 11, color: '#999', marginLeft: 10 }}>{showTestSuite ? 'Playwright test results' : showPriorities ? (priorityViewMode === 'category' ? 'Grouped by category' : 'Ranked priority list') : showOrgChart ? 'Relationship mapping' : showEntities ? '48 entities (v3.1)' : showCompetitors ? 'All competitors' : showSummary ? 'All sections' : `${section[0]}.md`}</span>
           </div>
+          <button onClick={() => { if (!voicePanelOpen) setVoicePanelOpen(true); toggleAlwaysOn(); }} title={voiceAlwaysOn ? 'Voice Agent (ON) — click to disable' : 'Voice Agent — click to enable'} style={{
+            background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', padding: '4px 8px', borderRadius: 8, position: 'relative',
+            animation: voiceAlwaysOn ? 'voicePulse 2s infinite' : voiceListening ? 'voicePulseRed 1s infinite' : 'none',
+            outline: voiceAlwaysOn ? '2px solid #4caf50' : voicePanelOpen ? '2px solid #8b6914' : 'none',
+          }}>🎤{voiceFlashExec && <span style={{ position: 'absolute', top: -2, right: -2, width: 8, height: 8, borderRadius: '50%', background: '#4caf50' }} />}</button>
           {showTestSuite && <span style={{ fontSize: 11, color: '#999' }}>{testSummaryData.total} tests</span>}
           {showPriorities && <span style={{ fontSize: 11, color: '#999' }}>{prioritiesData.length} priorities</span>}
           {showOrgChart && <span style={{ fontSize: 11, color: '#999' }}>{orgNodes.length} people</span>}
@@ -2700,6 +3442,195 @@ export default function App() {
           </>
         );
       })()}
+
+      {/* Voice Agent Panel */}
+      {voicePanelOpen && (
+        <div style={{
+          position: 'fixed', bottom: 16, right: 16, width: 360, maxHeight: '80vh',
+          background: '#fff', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
+          border: '1px solid #e0e0e0', display: 'flex', flexDirection: 'column', zIndex: 9999,
+          fontFamily: 'inherit', overflow: 'hidden',
+        }}>
+          {/* Header */}
+          <div style={{ padding: '12px 16px', borderBottom: '1px solid #e0e0e0', display: 'flex', alignItems: 'center', gap: 8, background: '#f8f8f6' }}>
+            <span style={{ fontSize: 18 }}>🎤</span>
+            <span style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 16 }}>Voice Agent</span>
+            <span style={{ fontSize: 10, color: '#8b6914', background: '#f5e6c8', padding: '2px 6px', borderRadius: 3, flex: 1 }}>{Object.values(VOICE_CMD_EXAMPLES).reduce((s, a) => s + a.length, 0) + voiceLearnedCommands.length}+ commands</span>
+            <span style={{
+              width: 8, height: 8, borderRadius: '50%',
+              background: voiceAlwaysOn ? '#4caf50' : voiceListening ? '#f44336' : '#999',
+              animation: (voiceAlwaysOn || voiceListening) ? 'pulse 1.5s infinite' : 'none',
+            }} />
+            <button onClick={() => setVoicePanelOpen(false)} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>✕</button>
+          </div>
+
+          <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
+            {/* Always-on status bar */}
+            <div style={{
+              padding: '8px 12px', borderRadius: 6, marginBottom: 12, fontSize: 11, display: 'flex', alignItems: 'center', gap: 6,
+              background: voiceAlwaysOn ? '#e8f5e9' : '#f5f5f5', color: voiceAlwaysOn ? '#2e7d32' : '#888',
+            }}>
+              <span style={{
+                width: 8, height: 8, borderRadius: '50%',
+                background: voiceAlwaysOn ? '#4caf50' : '#ccc',
+                animation: voiceAlwaysOn ? 'pulse 1.5s infinite' : 'none',
+              }} />
+              {voiceAlwaysOn
+                ? <span>Listening — say command + <strong>"now"</strong> to execute</span>
+                : <span>Inactive — click 🎤 in header to start</span>
+              }
+            </div>
+
+            {/* Interim transcript */}
+            {voiceInterimText && (
+              <div style={{ padding: '8px 12px', background: '#fafafa', borderRadius: 6, marginBottom: 8, fontSize: 12, color: '#999', fontStyle: 'italic' }}>
+                {voiceInterimText}
+              </div>
+            )}
+
+            {/* Final transcript */}
+            {voiceFinalText && (
+              <div style={{ padding: '8px 12px', background: '#f5f0e8', borderRadius: 6, marginBottom: 8, fontSize: 12, color: '#1a1a1a' }}>
+                <span style={{ fontSize: 10, color: '#8b6914', fontWeight: 600, marginRight: 6 }}>HEARD:</span>{voiceFinalText}
+              </div>
+            )}
+
+            {/* Status message */}
+            {voiceStatus.msg && (
+              <div style={{
+                padding: '8px 12px', borderRadius: 6, marginBottom: 12, fontSize: 12,
+                background: voiceStatus.type === 'success' ? '#e8f5e9' : voiceStatus.type === 'error' ? '#fce4ec' : voiceStatus.type === 'data' ? '#e3f2fd' : '#f5f5f5',
+                color: voiceStatus.type === 'success' ? '#2e7d32' : voiceStatus.type === 'error' ? '#c62828' : voiceStatus.type === 'data' ? '#1565c0' : '#666',
+              }}>
+                {voiceStatus.msg}
+              </div>
+            )}
+
+            {/* Command log with filter tabs */}
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: 0.5, flex: 1 }}>
+                  Log ({voiceCommandLog.length})
+                </div>
+                {['all', 'success', 'error'].map(f => (
+                  <button key={f} onClick={() => setVoiceLogFilter(f)} style={{
+                    padding: '2px 8px', fontSize: 10, borderRadius: 3, border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+                    background: voiceLogFilter === f ? (f === 'error' ? '#fce4ec' : f === 'success' ? '#e8f5e9' : '#e8eaf6') : '#f5f5f5',
+                    color: voiceLogFilter === f ? (f === 'error' ? '#c62828' : f === 'success' ? '#2e7d32' : '#3949ab') : '#999',
+                    fontWeight: voiceLogFilter === f ? 600 : 400,
+                  }}>{f}</button>
+                ))}
+                {voiceCommandLog.length > 0 && (
+                  <button onClick={() => { setVoiceCommandLog([]); try { localStorage.removeItem("coryphaeus-voice-log"); } catch {} }} style={{
+                    padding: '2px 8px', fontSize: 10, borderRadius: 3, border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+                    background: '#f5f5f5', color: '#999',
+                  }}>clear</button>
+                )}
+              </div>
+
+              {(() => {
+                const filtered = voiceLogFilter === 'all' ? voiceCommandLog : voiceCommandLog.filter(l => l.status === voiceLogFilter);
+                if (filtered.length === 0) return <div style={{ fontSize: 11, color: '#ccc', textAlign: 'center', padding: 12 }}>{voiceCommandLog.length === 0 ? 'No commands yet' : `No ${voiceLogFilter} commands`}</div>;
+                return filtered.slice(0, 20).map((log, i) => (
+                  <div key={log.id || i} onClick={() => processVoiceCommand(log.text)} style={{
+                    padding: '8px 10px', borderRadius: 4, marginBottom: 4, cursor: 'pointer',
+                    background: '#fafafa', border: '1px solid #f0f0f0', transition: 'background 0.1s',
+                  }} onMouseOver={e => e.currentTarget.style.background = '#f5f0e8'} onMouseOut={e => e.currentTarget.style.background = '#fafafa'}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                      <span style={{
+                        width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+                        background: log.status === 'success' ? '#4caf50' : log.status === 'error' ? '#f44336' : '#ff9800',
+                      }} />
+                      <span style={{ fontSize: 12, color: '#1a1a1a', flex: 1 }}>"{log.text}"</span>
+                      <span style={{ fontSize: 9, color: '#ccc', flexShrink: 0 }}>{new Date(log.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    </div>
+                    {log.response && <div style={{ fontSize: 11, color: '#4a7cc9', marginLeft: 12 }}>{log.response}</div>}
+                    <div style={{ display: 'flex', gap: 6, marginTop: 3, marginLeft: 12 }}>
+                      {log.patternId && <span style={{ fontSize: 9, color: '#8b6914', background: '#f5e6c8', padding: '0 5px', borderRadius: 2 }}>{log.patternId}</span>}
+                      {log.confidence != null && <span style={{ fontSize: 9, color: log.confidence < 70 ? '#e65100' : '#999', background: log.confidence < 70 ? '#fff3e0' : '#f5f5f5', padding: '0 5px', borderRadius: 2 }}>{log.confidence}%</span>}
+                      {log.depth > 0 && log.groupId && <span style={{ fontSize: 9, color: '#7b1fa2', background: '#f3e5f5', padding: '0 5px', borderRadius: 2 }}>sub-step</span>}
+                    </div>
+                  </div>
+                ));
+              })()}
+            </div>
+
+            {/* Command categories */}
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: '#888', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>Command Categories</div>
+              {Object.entries(VOICE_CMD_EXAMPLES).map(([cat, examples]) => (
+                <div key={cat} style={{ marginBottom: 4 }}>
+                  <button onClick={() => setVoiceExpandedCategory(voiceExpandedCategory === cat ? null : cat)} style={{
+                    width: '100%', padding: '6px 10px', background: voiceExpandedCategory === cat ? '#f5f0e8' : '#fafafa',
+                    border: '1px solid #e0e0e0', borderRadius: 4, cursor: 'pointer', fontSize: 12, color: '#333',
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontFamily: 'inherit',
+                  }}>
+                    <span>{voiceExpandedCategory === cat ? '▼' : '▸'} {cat}</span>
+                    <span style={{ fontSize: 10, color: '#8b6914', background: '#f5e6c8', padding: '1px 6px', borderRadius: 3 }}>{examples.length}</span>
+                  </button>
+                  {voiceExpandedCategory === cat && (
+                    <div style={{ padding: '6px 10px', background: '#fafafa', borderRadius: '0 0 4px 4px', borderTop: 'none' }}>
+                      {examples.map((ex, i) => (
+                        <div key={i} onClick={() => processVoiceCommand(ex)} style={{
+                          padding: '4px 8px', fontSize: 11, color: '#4a7cc9', cursor: 'pointer', borderRadius: 3,
+                        }} onMouseOver={e => e.currentTarget.style.background = '#e8f0fc'} onMouseOut={e => e.currentTarget.style.background = 'transparent'}>
+                          "{ex}"
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+              {/* Teach a new command */}
+              <button onClick={() => {
+                const trigger = prompt('Trigger phrase (e.g. "morning"):');
+                if (!trigger) return;
+                const steps = prompt('Steps separated by "then" (e.g. "open priorities then open summary"):');
+                if (!steps) return;
+                processVoiceCommand(`learn when I say ${trigger}, ${steps}`);
+              }} style={{
+                width: '100%', padding: '8px 10px', marginTop: 8, background: '#fff', border: '1px dashed #d0d0d0',
+                borderRadius: 4, cursor: 'pointer', fontSize: 12, color: '#666', fontFamily: 'inherit',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              }} onMouseOver={e => e.currentTarget.style.background = '#f5f0e8'} onMouseOut={e => e.currentTarget.style.background = '#fff'}>
+                🎓 Teach a new command
+              </button>
+            </div>
+
+            {/* Learned commands */}
+            {voiceLearnedCommands.length > 0 && (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#888', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>Learned Commands</div>
+                {[...voiceLearnedCommands].sort((a, b) => (b.usageCount || 0) - (a.usageCount || 0)).map((cmd, i) => (
+                  <div key={i} onClick={() => processVoiceCommand(cmd.trigger)} style={{
+                    padding: '6px 10px', background: '#fafafa', border: '1px solid #e0e0e0', borderRadius: 4,
+                    marginBottom: 4, cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', gap: 8,
+                  }} onMouseOver={e => e.currentTarget.style.background = '#f5f0e8'} onMouseOut={e => e.currentTarget.style.background = '#fafafa'}>
+                    <span style={{ flex: 1, color: '#1a1a1a' }}>"{cmd.trigger}"</span>
+                    <span style={{ fontSize: 10, color: '#999' }}>{cmd.steps.length} steps</span>
+                    {cmd.usageCount > 0 && <span style={{ fontSize: 10, color: '#8b6914', background: '#f5e6c8', padding: '1px 5px', borderRadius: 3 }}>x{cmd.usageCount}</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Bottom controls */}
+          <div style={{ padding: '10px 16px', borderTop: '1px solid #e0e0e0', background: '#f8f8f6', display: 'flex', gap: 8 }}>
+            <button onClick={toggleAlwaysOn} style={{
+              flex: 1, padding: '10px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600,
+              background: voiceAlwaysOn ? '#4caf50' : '#e0e0e0', color: voiceAlwaysOn ? '#fff' : '#666',
+              fontFamily: 'inherit', transition: 'all 0.2s',
+            }}>
+              {voiceAlwaysOn ? '🟢 Listening — Tap to Stop' : '🎤 Start Listening'}
+            </button>
+            <button onClick={() => setVoicePanelOpen(false)} style={{
+              padding: '10px 14px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 12,
+              background: '#f0f0f0', color: '#999', fontFamily: 'inherit',
+            }}>✕</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

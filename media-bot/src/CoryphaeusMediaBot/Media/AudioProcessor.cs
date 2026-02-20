@@ -37,23 +37,29 @@ public class AudioProcessor : IDisposable
     }
 
     /// <summary>
-    /// Process an incoming unmixed audio buffer from a specific participant.
+    /// Process an incoming audio buffer, extracting per-participant unmixed audio.
     /// </summary>
-    public void ProcessAudioBuffer(AudioBuffer buffer)
+    public void ProcessAudioBuffer(AudioMediaBuffer buffer)
     {
         if (_disposed) return;
 
-        var msi = buffer.ActiveSpeakerId;
-        if (!_recognizers.TryGetValue(msi, out var recognizer))
-        {
-            recognizer = CreateRecognizer(msi);
-            _recognizers[msi] = recognizer;
-        }
+        var unmixedBuffers = buffer.UnmixedAudioBuffers;
+        if (unmixedBuffers == null || unmixedBuffers.Length == 0) return;
 
-        // Push the raw PCM data to the speech recognizer's push stream
-        var data = new byte[buffer.Length];
-        MarshalHelper.Copy(buffer.Data, data, 0, (int)buffer.Length);
-        recognizer.PushStream.Write(data);
+        foreach (var unmixed in unmixedBuffers)
+        {
+            var msi = unmixed.ActiveSpeakerId;
+            if (!_recognizers.TryGetValue(msi, out var recognizer))
+            {
+                recognizer = CreateRecognizer(msi);
+                _recognizers[msi] = recognizer;
+            }
+
+            // Push the raw PCM data to the speech recognizer's push stream
+            var data = new byte[unmixed.Length];
+            MarshalHelper.Copy(unmixed.Data, data, 0, (int)unmixed.Length);
+            recognizer.PushStream.Write(data);
+        }
     }
 
     private ParticipantRecognizer CreateRecognizer(uint msi)

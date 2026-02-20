@@ -3,6 +3,8 @@ import { CRM_TOOLS } from "./tools";
 import { CHAT_SYSTEM_PROMPT, MEETING_SYSTEM_PROMPT, MEETING_CHAT_SYSTEM_PROMPT } from "./prompts";
 import { CrmClient } from "../crm/client";
 import { getPool } from "../crm/database";
+import { DealIntelligenceObserver } from "../intelligence/observer";
+import { EntityType, InsightType } from "../intelligence/types";
 
 export type AgentMode = "chat" | "meeting" | "meeting_chat";
 
@@ -16,6 +18,8 @@ interface ToolInput {
   owner_id?: string;
   entity_type?: string;
   entity_id?: string;
+  entity_name?: string;
+  insight_type?: string;
   time_range?: string;
 }
 
@@ -30,6 +34,7 @@ export class ClaudeEngine {
   private crm: CrmClient;
   private model: string;
   private conversationHistory: Map<string, Anthropic.MessageParam[]>;
+  private observer: DealIntelligenceObserver | null = null;
 
   constructor() {
     this.client = new Anthropic({
@@ -38,6 +43,10 @@ export class ClaudeEngine {
     this.crm = new CrmClient();
     this.model = process.env.CLAUDE_MODEL || "claude-sonnet-4-6";
     this.conversationHistory = new Map();
+  }
+
+  setObserver(observer: DealIntelligenceObserver): void {
+    this.observer = observer;
   }
 
   async processMessage(
@@ -206,6 +215,17 @@ export class ClaudeEngine {
 
       case "get_recent_activities":
         return await this.crm.getRecentActivities(input.limit || 10, input.owner_id);
+
+      case "get_deal_intelligence":
+        if (!this.observer) {
+          return { error: "Deal intelligence is not available" };
+        }
+        return await this.observer.getIntelligence(
+          input.entity_name || input.query || "",
+          input.entity_type as EntityType | undefined,
+          input.insight_type as InsightType | undefined,
+          input.limit
+        );
 
       default:
         return { error: `Unknown tool: ${name}` };

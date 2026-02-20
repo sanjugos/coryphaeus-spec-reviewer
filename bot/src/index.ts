@@ -10,6 +10,7 @@ import { CoryphaeusBot } from "./bot";
 import { MediaWebSocketServer } from "./websocket/media-server";
 import { initializeDatabase, needsSeeding } from "./crm/database";
 import { seedDatabase } from "./crm/seed";
+import { DealIntelligenceObserver } from "./intelligence/observer";
 
 // Load environment variables
 const PORT = process.env.PORT || 3978;
@@ -38,8 +39,14 @@ adapter.onTurnError = async (context: TurnContext, error: Error) => {
   await context.sendActivity("Sorry, something went wrong. Please try again.");
 };
 
-// Create bot
-const bot = new CoryphaeusBot();
+// Create deal intelligence observer
+const observer = new DealIntelligenceObserver();
+
+// Create bot with observer
+const bot = new CoryphaeusBot(observer);
+
+// Wire observer into Claude engine
+bot.engine.setObserver(observer);
 
 // Express server
 const app = express();
@@ -49,7 +56,7 @@ app.use(express.json());
 const httpServer = createServer(app);
 
 // Attach WebSocket server for C# media bot communication
-const mediaWs = new MediaWebSocketServer(httpServer, bot.engine);
+const mediaWs = new MediaWebSocketServer(httpServer, bot.engine, observer);
 
 // Request logging middleware
 app.use((req, _res, next) => {

@@ -1,6 +1,7 @@
 import { Server as HttpServer } from "http";
 import WebSocket, { WebSocketServer } from "ws";
 import { ClaudeEngine } from "../claude/engine";
+import { DealIntelligenceObserver } from "../intelligence/observer";
 
 // Message types sent from C# media bot → Node.js
 interface TranscriptionMessage {
@@ -47,10 +48,12 @@ const MAX_TRANSCRIPT_BUFFER = 50;
 export class MediaWebSocketServer {
   private wss: WebSocketServer;
   private engine: ClaudeEngine;
+  private observer: DealIntelligenceObserver | null;
   private sessions: Map<string, MeetingSession> = new Map();
 
-  constructor(server: HttpServer, engine: ClaudeEngine) {
+  constructor(server: HttpServer, engine: ClaudeEngine, observer?: DealIntelligenceObserver) {
     this.engine = engine;
+    this.observer = observer || null;
     this.wss = new WebSocketServer({ server, path: "/ws/media" });
     this.init();
   }
@@ -129,6 +132,16 @@ export class MediaWebSocketServer {
 
     const session = this.sessions.get(msg.meetingId);
     if (!session) return;
+
+    // Passive observation: fire-and-forget
+    if (this.observer) {
+      this.observer.observe({
+        text: msg.text,
+        source_type: "voice",
+        meeting_id: msg.meetingId,
+        speaker_name: msg.displayName,
+      });
+    }
 
     // Buffer the transcript
     session.transcriptBuffer.push(`${msg.displayName}: ${msg.text}`);

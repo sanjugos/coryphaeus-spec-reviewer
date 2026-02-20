@@ -8,15 +8,19 @@ import {
   ConversationReference,
 } from "botbuilder";
 import { ClaudeEngine, AgentMode } from "./claude/engine";
+import { DealIntelligenceObserver } from "./intelligence/observer";
+import { SourceType } from "./intelligence/types";
 
 export class CoryphaeusBot extends ActivityHandler {
   public readonly engine: ClaudeEngine;
   private conversationRefs: Map<string, Partial<ConversationReference>>;
+  private observer: DealIntelligenceObserver | null;
 
-  constructor() {
+  constructor(observer?: DealIntelligenceObserver) {
     super();
     this.engine = new ClaudeEngine();
     this.conversationRefs = new Map();
+    this.observer = observer || null;
 
     // Handle incoming messages
     this.onMessage(async (context: TurnContext, next) => {
@@ -24,6 +28,31 @@ export class CoryphaeusBot extends ActivityHandler {
       this.storeConversationRef(context);
 
       const text = (context.activity.text || "").trim();
+
+      // Filter out bot's own messages
+      if (context.activity.from?.id === context.activity.recipient?.id) {
+        await next();
+        return;
+      }
+
+      // Passive observation: fire-and-forget on all group/meeting messages
+      if (this.observer && text) {
+        const conversationType = context.activity.conversation?.conversationType;
+        const isMeeting = !!context.activity.channelData?.meeting;
+        const isGroup = conversationType === "groupChat" || conversationType === "channel";
+
+        if (isGroup || isMeeting) {
+          const sourceType: SourceType = isMeeting ? "meeting" : "chat";
+          this.observer.observe({
+            text,
+            source_type: sourceType,
+            conversation_id: context.activity.conversation?.id,
+            meeting_id: context.activity.channelData?.meeting?.id,
+            speaker_name: context.activity.from?.name,
+          });
+        }
+      }
+
       const removedMention = this.removeBotMention(text, context);
 
       if (!removedMention) {

@@ -5,6 +5,7 @@ import {
   CardFactory,
 } from "botbuilder";
 import { ClaudeEngine } from "../claude/engine";
+import { DealIntelligenceObserver } from "../intelligence/observer";
 
 // Meeting state tracked per active meeting
 interface MeetingState {
@@ -21,10 +22,12 @@ const INTERJECTION_COOLDOWN_SECONDS = 120;
 
 export class MeetingHandler {
   private engine: ClaudeEngine;
+  private observer: DealIntelligenceObserver | null;
   private activeMeetings: Map<string, MeetingState>;
 
-  constructor(engine: ClaudeEngine) {
+  constructor(engine: ClaudeEngine, observer?: DealIntelligenceObserver) {
     this.engine = engine;
+    this.observer = observer || null;
     this.activeMeetings = new Map();
   }
 
@@ -85,6 +88,16 @@ export class MeetingHandler {
   ): Promise<void> {
     const state = this.activeMeetings.get(meetingId);
     if (!state) return;
+
+    // Passive observation: fire-and-forget
+    if (this.observer) {
+      this.observer.observe({
+        text,
+        source_type: "meeting",
+        meeting_id: meetingId,
+        speaker_name: speaker,
+      });
+    }
 
     // Buffer the transcript
     state.transcriptBuffer.push(`${speaker}: ${text}`);

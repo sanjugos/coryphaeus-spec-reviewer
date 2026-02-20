@@ -127,6 +127,29 @@ export async function initializeDatabase(): Promise<void> {
       weakness TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS deal_insights (
+      id TEXT PRIMARY KEY,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT,
+      entity_name TEXT NOT NULL,
+      insight_type TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      raw_text TEXT NOT NULL,
+      confidence REAL DEFAULT 0.8,
+      source_type TEXT NOT NULL,
+      source_conversation_id TEXT,
+      source_meeting_id TEXT,
+      speaker_name TEXT,
+      observed_at TIMESTAMPTZ DEFAULT NOW(),
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      is_stale BOOLEAN DEFAULT FALSE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_deal_insights_entity
+      ON deal_insights(entity_type, entity_id) WHERE NOT is_stale;
+    CREATE INDEX IF NOT EXISTS idx_deal_insights_name
+      ON deal_insights(entity_name) WHERE NOT is_stale;
   `);
 
   console.log("[DB] Tables initialized");

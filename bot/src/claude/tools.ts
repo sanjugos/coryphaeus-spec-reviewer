@@ -118,5 +118,23 @@ Examples:
       },
       required: []
     }
+  },
+  {
+    name: "get_deal_intelligence",
+    description: `Retrieve accumulated intelligence and observations about a deal, account, or contact. This data comes from passively observing team conversations and meetings — it captures deal risks, budget signals, sentiment, competitive intel, timeline changes, stakeholder changes, and next steps that were discussed.
+
+Use this tool when someone asks "what do you think?", "any thoughts?", "what have you heard?", "what's the latest on...", or similar open-ended questions about a deal or account. Also use it to supplement CRM data with conversational intelligence.
+
+The results are observational (from conversations) — distinguish them from factual CRM data when presenting to users.`,
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        entity_name: { type: "string", description: "Name of the account, deal, or contact to look up intelligence for" },
+        entity_type: { type: "string", enum: ["account", "opportunity", "contact"], description: "Optional: filter by entity type" },
+        insight_type: { type: "string", enum: ["deal_risk", "budget_signal", "sentiment", "competitive_intel", "timeline_change", "stakeholder_change", "next_step", "general"], description: "Optional: filter by insight type" },
+        limit: { type: "number", description: "Number of insights to return (default 20)" }
+      },
+      required: ["entity_name"]
+    }
   }
 ];

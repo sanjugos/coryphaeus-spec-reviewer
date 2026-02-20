@@ -1,0 +1,32 @@
+{
+  "name": "coryphaeus-teams-agent",
+  "version": "1.0.0",
+  "description": "Coryphaeus CRM agent for Microsoft Teams — chat queries and meeting participation",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc --watch & nodemon dist/index.js",
+    "lint": "eslint src/**/*.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@azure/data-tables": "^13.2.2",
+    "@microsoft/microsoft-graph-client": "^3.0.7",
+    "@types/pg": "^8.16.0",
+    "botbuilder": "^4.23.1",
+    "botbuilder-core": "^4.23.1",
+    "botframework-connector": "^4.23.1",
+    "express": "^4.21.0",
+    "isomorphic-fetch": "^3.0.0",
+    "pg": "^8.18.0",
+    "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.11.0",
+    "@types/ws": "^8.18.1",
+    "nodemon": "^3.0.2",
+    "typescript": "^5.3.3"
+  }
+}

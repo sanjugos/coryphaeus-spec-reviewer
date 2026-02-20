@@ -1,0 +1,74 @@
+{
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.17/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.17",
+  "version": "1.0.0",
+  "id": "99fdef1f-0dd2-4822-8368-00c0ef33bdb3",
+  "developer": {
+    "name": "ForwardAI",
+    "websiteUrl": "https://forwardai.dev",
+    "privacyUrl": "https://forwardai.dev/privacy",
+    "termsOfUseUrl": "https://forwardai.dev/terms"
+  },
+  "name": {
+    "short": "Coryphaeus",
+    "full": "Coryphaeus CRM Assistant"
+  },
+  "description": {
+    "short": "AI CRM assistant for Teams — deals, contacts, pipeline, and meeting intelligence",
+    "full": "Coryphaeus is an AI-powered CRM assistant that joins your Teams conversations and meetings. Ask about your deals, pipeline, contacts, and account plans. In meetings, Coryphaeus listens to discussions and provides relevant CRM data when company names, contacts, or deals are mentioned."
+  },
+  "icons": {
+    "color": "color.png",
+    "outline": "outline.png"
+  },
+  "accentColor": "#4F46E5",
+  "bots": [
+    {
+      "botId": "99fdef1f-0dd2-4822-8368-00c0ef33bdb3",
+      "scopes": ["personal", "team", "groupChat"],
+      "supportsFiles": false,
+      "isNotificationOnly": false,
+      "supportsCalling": true,
+      "supportsVideo": true,
+      "commandLists": [
+        {
+          "scopes": ["personal", "groupChat"],
+          "commands": [
+            {
+              "title": "top deals",
+              "description": "Show my top deals by value"
+            },
+            {
+              "title": "pipeline",
+              "description": "Show pipeline summary with stage breakdown"
+            },
+            {
+              "title": "activity",
+              "description": "Summarize my recent activity"
+            },
+            {
+              "title": "account",
+              "description": "Look up an account (e.g., 'account Northwind')"
+            },
+            {
+              "title": "contacts",
+              "description": "Find contacts (e.g., 'contacts at Contoso')"
+            },
+            {
+              "title": "help",
+              "description": "Show what I can help with"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "webApplicationInfo": {
+    "id": "99fdef1f-0dd2-4822-8368-00c0ef33bdb3",
+    "resource": "api://coryphaeus-teams-agent.azurewebsites.net/99fdef1f-0dd2-4822-8368-00c0ef33bdb3"
+  },
+  "permissions": ["identity", "messageTeamMembers"],
+  "validDomains": [
+    "coryphaeus-teams-agent.azurewebsites.net"
+  ]
+}

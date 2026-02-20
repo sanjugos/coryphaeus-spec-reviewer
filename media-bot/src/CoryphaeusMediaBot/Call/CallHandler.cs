@@ -87,12 +87,12 @@ public class CallHandler : IDisposable
         }
     }
 
-    private void OnCallUpdated(ICall sender, ResourceEventArgs<Microsoft.Graph.Call> args)
+    private void OnCallUpdated(ICall sender, ResourceEventArgs<Microsoft.Graph.Models.Call> args)
     {
         var state = args.NewResource?.State;
         _logger.LogInformation("Call {CallId} state changed to {State}", _call.Id, state);
 
-        if (state == Microsoft.Graph.CallState.Terminated)
+        if (state == Microsoft.Graph.Models.CallState.Terminated)
         {
             _wsClient.SendMeetingLeft(MeetingId ?? _call.Id);
         }

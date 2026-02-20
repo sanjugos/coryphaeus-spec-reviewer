@@ -1,4 +1,6 @@
+using System.Net.Http.Headers;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Graph.Communications.Client;
 using CoryphaeusMediaBot.Bot;
 
 namespace CoryphaeusMediaBot.Controllers;
@@ -31,11 +33,33 @@ public class PlatformCallController : ControllerBase
 
         try
         {
-            // The Graph Communications client processes the notification
-            // from the HTTP request body and routes it to the appropriate handler
             var client = _botService.Client;
-            await client.ProcessNotificationAsync(Request).ConfigureAwait(false);
-            return Ok();
+
+            // Convert ASP.NET Core HttpRequest to System.Net.Http.HttpRequestMessage
+            var requestMessage = new HttpRequestMessage
+            {
+                Method = new HttpMethod(Request.Method),
+                RequestUri = new Uri($"{Request.Scheme}://{Request.Host}{Request.Path}{Request.QueryString}"),
+            };
+
+            // Copy body
+            requestMessage.Content = new StreamContent(Request.Body);
+            if (Request.ContentType != null)
+            {
+                requestMessage.Content.Headers.ContentType = MediaTypeHeaderValue.Parse(Request.ContentType);
+            }
+
+            // Copy non-content headers
+            foreach (var header in Request.Headers)
+            {
+                if (!header.Key.StartsWith("Content-", StringComparison.OrdinalIgnoreCase))
+                {
+                    requestMessage.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
+                }
+            }
+
+            var response = await client.ProcessNotificationAsync(requestMessage).ConfigureAwait(false);
+            return StatusCode((int)response.StatusCode);
         }
         catch (Exception ex)
         {

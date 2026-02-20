@@ -1,5 +1,7 @@
 using System.Net;
 using System.Security.Cryptography.X509Certificates;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.Graph.Communications.Calls;
 using Microsoft.Graph.Communications.Calls.Media;
 using Microsoft.Graph.Communications.Client;
@@ -7,6 +9,7 @@ using Microsoft.Graph.Communications.Client.Authentication;
 using Microsoft.Graph.Communications.Common;
 using Microsoft.Graph.Communications.Common.Telemetry;
 using Microsoft.Graph.Communications.Resources;
+using Microsoft.Graph.Models;
 using Microsoft.Skype.Bots.Media;
 using CoryphaeusMediaBot.Call;
 using CoryphaeusMediaBot.Media;
@@ -108,14 +111,22 @@ public class MediaBotService
             Initialize();
         }
 
+        var (chatInfo, meetingInfo) = ParseJoinUrl(joinUrl);
         var mediaSession = CreateMediaSession();
 
-        var joinParams = new JoinMeetingParameters
+        var joinParams = new JoinMeetingParameters(chatInfo, meetingInfo, mediaSession)
         {
-            JoinUrl = new Uri(joinUrl),
-            DisplayName = displayName,
-            MediaSession = mediaSession,
+            TenantId = _config.BotTenantId,
         };
+
+        if (!string.IsNullOrWhiteSpace(displayName))
+        {
+            joinParams.GuestIdentity = new Identity
+            {
+                Id = Guid.NewGuid().ToString(),
+                DisplayName = displayName,
+            };
+        }
 
         var call = await _client!.Calls().AddAsync(joinParams).ConfigureAwait(false);
         var callId = call.Id;
@@ -139,14 +150,52 @@ public class MediaBotService
             ReceiveUnmixedMeetingAudio = true,
         };
 
-        var createParams = new CreateMediaSessionParameters
+        return new MediaSession(
+            _client!.GraphLogger,
+            Guid.NewGuid(),
+            audioSocketSettings,
+            (VideoSocketSettings)null!,
+            (VideoSocketSettings)null!,
+            (DataSocketSettings)null!);
+    }
+
+    /// <summary>
+    /// Parses a Teams meeting join URL into ChatInfo and MeetingInfo.
+    /// </summary>
+    private static (ChatInfo, MeetingInfo) ParseJoinUrl(string joinUrl)
+    {
+        var decodedUrl = WebUtility.UrlDecode(joinUrl);
+        var regex = new Regex(@"https://teams\.microsoft\.com.*/(?<thread>[^/]+)/(?<message>[^?]+)\?context=(?<context>\{.*\})");
+        var match = regex.Match(decodedUrl);
+
+        if (!match.Success)
         {
-            AudioSocketSettings = new[] { audioSocketSettings },
-            VideoSocketSettings = Array.Empty<VideoSocketSettings>(),
-            MediaSessionId = Guid.NewGuid(),
+            throw new ArgumentException($"Join URL cannot be parsed: {joinUrl}", nameof(joinUrl));
+        }
+
+        var contextJson = JsonDocument.Parse(match.Groups["context"].Value);
+        var tid = contextJson.RootElement.GetProperty("Tid").GetString() ?? "";
+        var oid = contextJson.RootElement.GetProperty("Oid").GetString() ?? "";
+
+        var chatInfo = new ChatInfo
+        {
+            ThreadId = match.Groups["thread"].Value,
+            MessageId = match.Groups["message"].Value,
         };
 
-        return _client!.CreateMediaSession(createParams);
+        var meetingInfo = new OrganizerMeetingInfo
+        {
+            Organizer = new IdentitySet
+            {
+                User = new Identity { Id = oid },
+            },
+        };
+        meetingInfo.Organizer.User.AdditionalData = new Dictionary<string, object>
+        {
+            ["tenantId"] = tid,
+        };
+
+        return (chatInfo, meetingInfo);
     }
 
     private void OnIncomingCall(ICallCollection sender, CollectionEventArgs<ICall> args)
@@ -224,10 +273,10 @@ public class AuthenticationProvider : IRequestAuthenticationProvider
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
     }
 
-    public async Task<RequestValidationResult> ValidateInboundRequestAsync(HttpRequestMessage request)
+    public Task<RequestValidationResult> ValidateInboundRequestAsync(HttpRequestMessage request)
     {
         // In production, validate the inbound request token
-        return new RequestValidationResult { IsValid = true, TenantId = _tenantId };
+        return Task.FromResult(new RequestValidationResult { IsValid = true, TenantId = _tenantId });
     }
 
     private async Task<string> GetTokenAsync(string tenantId)

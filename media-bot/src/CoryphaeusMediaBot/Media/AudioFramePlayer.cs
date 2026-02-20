@@ -81,6 +81,5 @@ public class AudioSendBuffer : AudioMediaBuffer
         {
             _handle.Free();
         }
-        base.Dispose(disposing);
     }
 }

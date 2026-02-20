@@ -67,16 +67,6 @@
     "id": "99fdef1f-0dd2-4822-8368-00c0ef33bdb3",
     "resource": "api://coryphaeus-teams-agent.azurewebsites.net/99fdef1f-0dd2-4822-8368-00c0ef33bdb3"
   },
-  "authorization": {
-    "permissions": {
-      "resourceSpecific": [
-        {
-          "name": "ChatMessage.Read.Chat",
-          "type": "Application"
-        }
-      ]
-    }
-  },
   "permissions": ["identity", "messageTeamMembers"],
   "validDomains": [
     "coryphaeus-teams-agent.azurewebsites.net"

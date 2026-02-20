@@ -52,7 +52,7 @@ public class AudioProcessor : IDisposable
 
         // Push the raw PCM data to the speech recognizer's push stream
         var data = new byte[buffer.Length];
-        Marshal.Copy(buffer.Data, data, 0, (int)buffer.Length);
+        MarshalHelper.Copy(buffer.Data, data, 0, (int)buffer.Length);
         recognizer.PushStream.Write(data);
     }
 
@@ -124,7 +124,7 @@ public class AudioProcessor : IDisposable
 }
 
 // Marshal helper for copying unmanaged audio buffer data
-file static class Marshal
+static class MarshalHelper
 {
     public static void Copy(IntPtr source, byte[] destination, int startIndex, int length)
     {
